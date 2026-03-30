@@ -1,4 +1,87 @@
 // vfwredsum.vs vd, vs2, vs1
+
+if (!usum_as_osum())
+{
+  bool is_propagate = true;
+  bool use_mask = (insn.v_vm()==0);
+  reg_t vreg_n_elems = P.VU.VLEN/P.VU.vsew/2; // how many elements summed once
+
+  // #define DEBUG_FLOAT_ADD
+
+  #ifndef DEBUG_FLOAT_ADD
+  tree_reduce_binary_op<float16_ref, float32_ref, fp_bin_op_wrapper<std::plus<float32_ref>, float32_ref>> tree_add_op32;
+  tree_reduce_binary_op<float32_ref, float64_ref, fp_bin_op_wrapper<std::plus<float64_ref>,float64_ref>> tree_add_op64;
+  #else
+  printf("================== vfwredusum.vs; pc=%lx ==================\n", pc);
+  tree_reduce_binary_op<float16_ref, float32_ref, fp_bin_op_wrapper<debug_float_add, float32_ref>> tree_add_op32;
+  tree_reduce_binary_op<float32_ref, float64_ref, fp_bin_op_wrapper<debug_double_add,float64_ref>> tree_add_op64;
+  #endif
+
+  rvv_mask mask_op{ &P.VU.elt<uint64_t>(0,0), 0 }; // mask operator, mask_op(index) to judge masked or not
+  float_widen_op elem_widen_op; // fp16->fp32, fp32->fp64
+
+
+  VI_VFP_VV_TREE_WIDE_REDUCTION
+  (
+  #ifndef DEBUG_FLOAT_ADD
+  {
+    for (reg_t pos=0; pos<vl; pos+=vreg_n_elems) {
+      mask_op.offset = pos;
+      reg_t op_len = ((pos+vreg_n_elems)>vl)?(vl-pos):vreg_n_elems;
+      float32_ref tree_res = tree_add_op32(
+        reinterpret_cast<float16_ref*>(&(P.VU.elt<float16_t>(rs2_num, pos))), 0, op_len, 
+        fp_bin_op_wrapper<std::plus<float32_ref>, float32_ref>(),
+        use_mask, mask_op, elem_widen_op);
+      set_fp_exceptions;
+      vd_0 = float32_ref(vd_0) + tree_res;
+      set_fp_exceptions;
+    }
+  },
+  {
+    for (reg_t pos=0; pos<vl; pos+=vreg_n_elems) {
+      mask_op.offset = pos;
+      reg_t op_len = ((pos+vreg_n_elems)>vl)?(vl-pos):vreg_n_elems;
+      float64_ref tree_res = tree_add_op64(
+        reinterpret_cast<float32_ref*>(&(P.VU.elt<float32_t>(rs2_num, pos))), 0, op_len, 
+        fp_bin_op_wrapper<std::plus<float64_ref>, float64_ref>(),
+        use_mask, mask_op, elem_widen_op);
+      set_fp_exceptions;
+      vd_0 = float64_ref(vd_0) + tree_res;
+      set_fp_exceptions;
+    }
+  }
+  #else
+  {
+    for (reg_t pos=0; pos<vl; pos+=vreg_n_elems) {
+      mask_op.offset = pos;
+      reg_t op_len = ((pos+vreg_n_elems)>vl)?(vl-pos):vreg_n_elems;
+      float32_ref tree_res = tree_add_op32(
+        reinterpret_cast<float16_ref*>(&(P.VU.elt<float16_t>(rs2_num, pos))), 0, op_len, 
+        fp_bin_op_wrapper<debug_float_add, float32_ref>(),
+        use_mask, mask_op, elem_widen_op);
+      set_fp_exceptions;
+      vd_0 = debug_float_add()(float32_ref(vd_0) , tree_res);
+      set_fp_exceptions;
+    }
+  },
+  {
+    for (reg_t pos=0; pos<vl; pos+=vreg_n_elems) {
+      mask_op.offset = pos;
+      reg_t op_len = ((pos+vreg_n_elems)>vl)?(vl-pos):vreg_n_elems;
+      float64_ref tree_res = tree_add_op64(
+        reinterpret_cast<float32_ref*>(&(P.VU.elt<float32_t>(rs2_num, pos))), 0, op_len, 
+        fp_bin_op_wrapper<debug_double_add, float64_ref>(),
+        use_mask, mask_op, elem_widen_op);
+      set_fp_exceptions;
+      vd_0 = debug_double_add()(float64_ref(vd_0) , tree_res);
+      set_fp_exceptions;
+    }
+  }
+  #endif
+  )
+}
+else
+{
 bool is_propagate = true;
 VI_VFP_VV_LOOP_WIDE_REDUCTION
 ({
@@ -7,3 +90,4 @@ VI_VFP_VV_LOOP_WIDE_REDUCTION
 {
   vd_0 = f64_add(vd_0, vs2);
 })
+}

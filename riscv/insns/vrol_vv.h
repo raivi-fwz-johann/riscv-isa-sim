@@ -2,7 +2,7 @@
 
 #include "zvk_ext_macros.h"
 
-require_zvkb;
+require_zvbb;
 
 // 'mask' selects the low log2(vsew) bits of the shift amount,
 // to limit the maximum shift to "vsew - 1" bits.

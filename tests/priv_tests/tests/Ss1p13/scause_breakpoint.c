@@ -1,0 +1,27 @@
+
+#include <test_utils.h>
+
+static reg_t scause_cause = 32;
+
+static void scause_shandler(){
+    excpt.triggered = true;
+    scause_cause = CSRR(scause);
+}
+
+bool __attribute__((weak)) scause_breakpoint(){
+    TEST_START();
+
+    TEST_COMPARE("check that currunt mode is S", MODE_S, current_mode);                                                   
+
+    set_shandler(scause_shandler);                                                                                                                                                                             
+
+    excpt.triggered = false;
+    excpt.for_testing = true;
+
+    asm volatile ("ebreak \n\t");
+
+    TEST_COMPARE("check that interrupt is triggered", true, excpt.triggered);
+    TEST_COMPARE("check trap cause CAUSE_BREAKPOINT", CAUSE_BREAKPOINT, scause_cause);
+
+    TEST_END();
+}

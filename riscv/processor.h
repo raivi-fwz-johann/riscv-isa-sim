@@ -17,9 +17,57 @@
 #include "triggers.h"
 #include "../fesvr/memif.h"
 #include "vector_unit.h"
-
+// rivai beg
+//// RiVAI: simpoint add --YC
+#include "simpoint_module.h"
+//// RiVAI: simpoint add end --YC
+#include "mem_units.h"
+// rivai end
 #define FIRST_HPMCOUNTER 3
 #define N_HPMCOUNTERS 29
+
+
+struct xlate_flags_t {
+  bool forced_virt      : 1 {false};
+  bool hlvx             : 1 {false};
+  bool lr               : 1 {false};
+  bool ss_access        : 1 {false};
+  bool clean_inval      : 1 {false};
+  bool enable_misalign  : 1 {false};
+  bool enable_16B_check : 1 {false};
+
+  bool is_special_access() const {
+    return forced_virt || hlvx || lr || ss_access || clean_inval;
+  }
+};
+
+struct mmu_trace_t {
+  uint64_t      paddr     = 0;
+  uint64_t      pte_paddr[5] = {0};
+  int8_t        levels    = -1;  
+  uint64_t      excp_cause;
+  xlate_flags_t xf_log;
+};
+
+/* code ext: Structure to record current info */
+struct current_info_t {
+  uint64_t vpc{~uint64_t(0)};
+  uint64_t ppc;
+  uint64_t ppc2;
+  uint64_t bits{0};
+
+  /* Trap relative members */
+  uint64_t epc;
+  uint64_t cause;
+  uint64_t tval;
+  uint64_t tval2;
+  bool in_trap;
+  bool has_tval2;
+
+  /* memory trace */
+  mmu_trace_t mem_trace;
+};
+/* code ext end */
 
 class processor_t;
 class mmu_t;
@@ -61,23 +109,18 @@ struct insn_desc_t
   static const insn_desc_t illegal_instruction;
 };
 
-struct opcode_map_entry_t
-{
-  insn_bits_t match;
-  insn_bits_t mask;
-  insn_func_t func;
-};
-
 // regnum, data
 typedef std::map<reg_t, freg_t> commit_log_reg_t;
 
 // addr, value, size
-typedef std::vector<std::tuple<reg_t, uint64_t, uint8_t>> commit_log_mem_t;
+// rivai beg, Add two reg_t elements to record paddrs(because of page switch)
+typedef std::vector<std::tuple<reg_t, uint64_t, uint8_t, reg_t, reg_t>> commit_log_mem_t;
+// rivai end
 
 // architectural state of a RISC-V hart
 struct state_t
 {
-  void add_iprio_proxy(processor_t* const proc, sscsrind_reg_csr_t::sscsrind_reg_csr_t_p ireg);
+  void add_ireg_proxy(processor_t* const proc, sscsrind_reg_csr_t::sscsrind_reg_csr_t_p ireg);
   void reset(processor_t* const proc, reg_t max_isa);
   void add_csr(reg_t addr, const csr_t_p& csr);
 
@@ -100,8 +143,6 @@ struct state_t
   csr_t_p mtval;
   csr_t_p mtvec;
   csr_t_p mcause;
-  smcntrpmf_csr_t_p minstretcfg;
-  smcntrpmf_csr_t_p mcyclecfg;
   wide_counter_csr_t_p minstret;
   wide_counter_csr_t_p mcycle;
   mie_csr_t_p mie;
@@ -161,10 +202,9 @@ struct state_t
   bool debug_mode;
 
   mseccfg_csr_t_p mseccfg;
-  csr_t_p mseccfgh;
 
-  static const int max_pmp = 64;
-  pmpaddr_csr_t_p pmpaddr[max_pmp];
+  static int max_pmp; /* code ext: For setting pmp csr num, remove const. */
+  pmpaddr_csr_t_p pmpaddr[64]; /* code ext: For setting pmp csr num. */
 
   float_csr_t_p fflags;
   float_csr_t_p frm;
@@ -180,12 +220,6 @@ struct state_t
   csr_t_p htimedelta;
   time_counter_csr_t_p time;
   csr_t_p time_proxy;
-
-  csr_t_p instretcfg;
-  csr_t_p instretcfgh;
-
-  csr_t_p cyclecfg;
-  csr_t_p cyclecfgh;
 
   csr_t_p stimecmp;
   csr_t_p vstimecmp;
@@ -215,11 +249,57 @@ struct state_t
   int last_inst_flen;
 
   elp_t elp;
+// rivai beg
+  //// RiVAI: gprof add --ZQ
+  reg_t cycle; // reserve the original memory address
+  //// RiVAI: gprof add end --ZQ
+// rivai end
 
   bool critical_error;
 
  private:
   void csr_init(processor_t* const proc, reg_t max_isa);
+};
+
+class opcode_cache_entry_t {
+ public:
+  opcode_cache_entry_t()
+  {
+    reset();
+  }
+
+  void reset()
+  {
+    for (size_t i = 0; i < associativity; i++) {
+      tag[i] = 0;
+      contents[i] = &insn_desc_t::illegal_instruction;
+    }
+  }
+
+  void replace(insn_bits_t opcode, const insn_desc_t* desc)
+  {
+    for (size_t i = associativity - 1; i > 0; i--) {
+      tag[i] = tag[i-1];
+      contents[i] = contents[i-1];
+    }
+
+    tag[0] = opcode;
+    contents[0] = desc;
+  }
+
+  std::tuple<bool, const insn_desc_t*> lookup(insn_bits_t opcode)
+  {
+    for (size_t i = 0; i < associativity; i++)
+      if (tag[i] == opcode)
+        return std::tuple(true, contents[i]);
+
+    return std::tuple(false, nullptr);
+  }
+
+ private:
+  static const size_t associativity = 4;
+  insn_bits_t tag[associativity];
+  const insn_desc_t* contents[associativity];
 };
 
 // this class represents one processor in a RISC-V machine.
@@ -231,6 +311,17 @@ public:
               simif_t* sim, uint32_t id, bool halt_on_reset,
               FILE *log_file, std::ostream& sout_); // because of command line option --log and -s we need both
   ~processor_t();
+// rivai beg
+  //// RiVAI: gprof add --ZQ
+  reg_t &get_cycle() { return state.cycle; }
+  //// RiVAI: simpoint add --YC
+  void set_debug_boot() {
+    // simpoint boot rom needs to run in debug mode.
+    state.debug_mode = true;
+    set_privilege(PRV_M, false);
+  }
+  //// RiVAI: simpoint add end --YC
+// rivai end
 
   const isa_parser_t &get_isa() const & { return isa; }
   const cfg_t &get_cfg() const & { return *cfg; }
@@ -238,17 +329,21 @@ public:
   void set_debug(bool value);
   void set_histogram(bool value);
   void enable_log_commits();
-  bool get_log_commits_enabled() const { return log_commits_enabled; }
+  void enable_log_commits_stant(); /*code ext*/
+  bool get_log_commits_enabled() const { return log_commits_enabled || log_commits_stant_enabled;/*code ext*/ }
+  bool get_log_commits_stant_enabled() const { return log_commits_stant_enabled; } /*code ext*/
   void reset();
   void step(size_t n); // run for n cycles
   void put_csr(int which, reg_t val);
   uint32_t get_id() const { return id; }
   reg_t get_csr(int which, insn_t insn, bool write, bool peek = 0);
-  reg_t get_csr(int which) { return get_csr(which, insn_t(0), false, true); }
+  // reg_t get_csr(int which) { return get_csr(which, insn_t(0), false, true); }
+  reg_t get_csr(int which);
+  std::map<reg_t, reg_t> temp_csr_map;
+
   mmu_t* get_mmu() { return mmu; }
   state_t* get_state() { return &state; }
   unsigned get_xlen() const { return xlen; }
-  unsigned paddr_bits() { return isa.get_max_xlen() == 64 ? 56 : 34; }
   unsigned get_const_xlen() const {
     // Any code that assumes a const xlen should use this method to
     // document that assumption. If Spike ever changes to allow
@@ -298,9 +393,6 @@ public:
     extension_enable_table[ext] = enable && isa.extension_enabled(ext);
   }
   void set_impl(uint8_t impl, bool val) { impl_table[impl] = val; }
-  bool has_mmu() const { return max_vaddr_bits != 0; }
-  unsigned get_max_vaddr_bits() const { return max_vaddr_bits; }
-  void set_max_vaddr_bits(unsigned);
   bool supports_impl(uint8_t impl) const {
     return impl_table[impl];
   }
@@ -308,7 +400,10 @@ public:
     const int ialign = extension_enabled(EXT_ZCA) ? 16 : 32;
     return ~(reg_t)(ialign == 16 ? 0 : 2);
   }
-  reg_t throw_instruction_address_misaligned(reg_t pc);
+  void check_pc_alignment(reg_t pc) {
+    if (unlikely(pc & ~pc_alignment_mask()))
+      throw trap_instruction_address_misaligned(state.v, pc, 0, 0);
+  }
   reg_t legalize_privilege(reg_t);
   void set_privilege(reg_t, bool);
   const char* get_privilege_string() const;
@@ -318,13 +413,12 @@ public:
   FILE *get_log_file() { return log_file; }
 
   void register_base_insn(insn_desc_t insn) {
-    register_insn(insn, instructions);
+    register_insn(insn, false /* is_custom */);
   }
   void register_custom_insn(insn_desc_t insn) {
-    register_insn(insn, custom_instructions);
+    register_insn(insn, true /* is_custom */);
   }
   void register_extension(extension_t*);
-  void build_opcode_map();
 
   // MMIO slave interface
   bool load(reg_t addr, size_t len, uint8_t* bytes) override;
@@ -346,6 +440,7 @@ public:
 
   void set_pmp_num(reg_t pmp_num);
   void set_pmp_granularity(reg_t pmp_granularity);
+  void set_mmu_capability(int cap);
 
   const char* get_symbol(uint64_t addr);
 
@@ -353,9 +448,22 @@ public:
   bool is_waiting_for_interrupt() { return in_wfi; };
 
   void check_if_lpad_required();
-  reg_t set_lpad_expected(reg_t pc);
 
   reg_t select_an_interrupt_with_default_priority(reg_t enabled_interrupts) const;
+// rivai beg
+  //// RiVAI: simpoint add --YC
+  void set_simpoint_module(simpoint_module_t *sm) {
+    this->simpoint_module = sm;
+    this->state.csrmap[CSR_SIMPOINT] =
+        std::make_unique<simpoint_csr_t>(this, CSR_SIMPOINT);
+  }
+  simpoint_module_t *get_simpoint_module() const { return simpoint_module; }
+  //// RiVAI: simpoint add end --YC
+ private:
+  //// RiVAI: simpoint add --YC
+  simpoint_module_t *simpoint_module = nullptr;
+  //// RiVAI: simpoint add end --YC
+// rivai end
 
 private:
   const isa_parser_t isa;
@@ -368,9 +476,9 @@ private:
   state_t state;
   uint32_t id;
   unsigned xlen;
-  unsigned max_vaddr_bits;
   bool histogram_enabled;
   bool log_commits_enabled;
+  bool log_commits_stant_enabled; /***code ext***/
   FILE *log_file;
   std::ostream sout_; // needed for socket command interface -s, also used for -d and -l, but not for --log
   bool halt_on_reset;
@@ -383,17 +491,21 @@ private:
   std::bitset<NUM_ISA_EXTENSIONS> extension_dynamic;
   mutable std::bitset<NUM_ISA_EXTENSIONS> extension_assumed_const;
 
-  std::vector<opcode_map_entry_t> opcode_map[128];
   std::vector<insn_desc_t> instructions;
   std::vector<insn_desc_t> custom_instructions;
   std::unordered_map<reg_t,uint64_t> pc_histogram;
 
+  static const size_t OPCODE_CACHE_SIZE = 4095;
+  opcode_cache_entry_t opcode_cache[OPCODE_CACHE_SIZE];
+
+  bool is_handled_in_vs();
   void take_pending_interrupt() { take_interrupt(state.mip->read() & state.mie->read()); }
   void take_interrupt(reg_t mask); // take first enabled interrupt in mask
   void take_trap(trap_t& t, reg_t epc); // take an exception
   void take_trigger_action(triggers::action_t action, reg_t breakpoint_tval, reg_t epc, bool virt);
   void disasm(insn_t insn); // disassemble and print an instruction
-  void register_insn(insn_desc_t, std::vector<insn_desc_t>& pool);
+  void register_insn(insn_desc_t, bool);
+  int paddr_bits();
 
   void enter_debug_mode(uint8_t cause, uint8_t ext_cause);
 
@@ -405,6 +517,7 @@ private:
   friend class extension_t;
 
   void parse_priv_string(const char*);
+  void build_opcode_map();
   void register_base_instructions();
   insn_func_t decode_insn(insn_t insn);
 
@@ -419,6 +532,43 @@ public:
 
   vectorUnit_t VU;
   triggers::module_t TM;
+
+// code ext beg
+public:
+  void set_log_commits(bool val) { log_commits_enabled = val; }
+  void set_fast_log_commits(bool val) { fast_log_commits = val; }
+  bool get_fast_log_commits() const { return fast_log_commits; }
+  void set_fast_log_mem(bool val) { fast_log_mem = val; }
+  bool is_fast_log_mem() const { return fast_log_mem and fast_log_commits; }
+
+  size_t get_step_count() const { return step_count; }
+  void reset_step_count() { step_count = 0; }
+
+  void set_deep_ctrl(bool val) { deep_ctrl = val; }
+  bool get_deep_ctrl() const { return deep_ctrl; }
+
+  current_info_t curr_info;
+  uint64_t pre_info_pc;
+
+  bool log_print_enabled{false};
+
+private:
+  bool fast_log_commits = false;
+  bool fast_log_mem = false;
+
+  std::unique_ptr<core_rob_t> rob;
+  std::unique_ptr<core_stb_t> stb;
+  mem_event_t mem_event_arg = mem_event_t(mem_event_t::NONE, mem_event_t::INVALID, false);
+  bool int_grnt;
+  bool deep_ctrl = false;
+
+  size_t step_count = 0;
+
+  friend class mem_event_ctrl_t;
+  friend class proc_event_ctrl_t;
+// code ext end
 };
+
+bool& usum_as_osum(); /*code ext*/
 
 #endif

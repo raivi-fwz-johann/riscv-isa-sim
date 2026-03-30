@@ -255,7 +255,9 @@ class mstatus_csr_t final: public base_status_csr_t {
  public:
   mstatus_csr_t(processor_t* const proc, const reg_t addr);
 
-  reg_t read() const noexcept override;
+  reg_t read() const noexcept override {
+    return val;
+  }
 
  protected:
   virtual bool unlogged_write(const reg_t val) noexcept override;
@@ -466,7 +468,6 @@ class medeleg_csr_t: public basic_csr_t {
   virtual bool unlogged_write(const reg_t val) noexcept override;
  private:
   const reg_t hypervisor_exceptions;
-  const reg_t mmu_exceptions;
 };
 
 class sip_csr_t: public mip_proxy_csr_t {
@@ -724,7 +725,6 @@ class dcsr_csr_t: public csr_t {
   bool ebreakvs;
   bool ebreakvu;
   bool v;
-  bool mprven;
   uint8_t cause;
   uint8_t ext_cause;
   bool cetrig;
@@ -879,9 +879,9 @@ class sscsrind_reg_csr_t : public csr_t {
 
 // smcntrpmf_csr_t caches the previous state of the CSR in case a CSRW instruction
 // modifies the state that should not be immediately visible to bump()
-class smcntrpmf_csr_t : public basic_csr_t {
+class smcntrpmf_csr_t : public masked_csr_t {
  public:
-  smcntrpmf_csr_t(processor_t* const proc, const reg_t addr);
+  smcntrpmf_csr_t(processor_t* const proc, const reg_t addr, const reg_t mask, const reg_t init);
   reg_t read_prev() const noexcept;
   void reset_prev() noexcept;
  protected:
@@ -973,7 +973,7 @@ class inaccessible_csr_t: public csr_t {
   virtual void verify_permissions(insn_t insn, bool write) const override;
   reg_t read() const noexcept override { return 0; }
  protected:
-  bool unlogged_write(const reg_t UNUSED val) noexcept override { return false; }
+  bool unlogged_write(const reg_t val) noexcept override { return false; }
 };
 
 class vstopi_csr_t: public csr_t {

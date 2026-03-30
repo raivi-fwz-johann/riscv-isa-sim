@@ -3,14 +3,9 @@
 #include "config.h"
 #include "mmu.h"
 #include "arith.h"
-#include "memif.h"
 #include "simif.h"
 #include "processor.h"
 #include "decode_macros.h"
-#include "platform.h"
-#include "triggers.h"
-
-#include <cassert>
 
 mmu_t::mmu_t(simif_t* sim, endianness_t endianness, processor_t* proc, reg_t cache_blocksz)
  : sim(sim), proc(proc), blocksz(cache_blocksz),
@@ -43,7 +38,6 @@ void mmu_t::flush_tlb()
   memset(tlb_insn, -1, sizeof(tlb_insn));
   memset(tlb_load, -1, sizeof(tlb_load));
   memset(tlb_store, -1, sizeof(tlb_store));
-  memset(pte_cache, -1, sizeof(pte_cache));
 
   flush_icache();
 }
@@ -54,16 +48,6 @@ void throw_access_exception(bool virt, reg_t addr, access_type type)
     case FETCH: throw trap_instruction_access_fault(virt, addr, 0, 0);
     case LOAD: throw trap_load_access_fault(virt, addr, 0, 0);
     case STORE: throw trap_store_access_fault(virt, addr, 0, 0);
-    default: abort();
-  }
-}
-
-[[noreturn]] void throw_page_fault_exception(bool virt, reg_t addr, access_type type)
-{
-  switch (type) {
-    case FETCH: throw trap_instruction_page_fault(virt, addr, 0, 0);
-    case LOAD: throw trap_load_page_fault(virt, addr, 0, 0);
-    case STORE: throw trap_store_page_fault(virt, addr, 0, 0);
     default: abort();
   }
 }
@@ -79,8 +63,22 @@ reg_t mmu_t::translate(mem_access_info_t access_info, reg_t len)
   reg_t mode = (reg_t) access_info.effective_priv;
 
   reg_t paddr = walk(access_info) | (addr & (PGSIZE-1));
+
+  // RIVAI: debug info
+  if (proc->get_cfg().debug_info)
+  {
+    std::cout << "virtual  : " << virt << std::endl;
+    std::cout << "mode     : " << mode << std::endl;
+    std::cout << "va -> pa : " << std::hex << addr << " -> " << std::hex << paddr << std::endl;
+  }
+
   if (!pmp_ok(paddr, len, access_info.flags.ss_access ? STORE : type, mode, access_info.flags.hlvx))
+  {
+    // RIVAI: debug info
+    if (proc->get_cfg().debug_info)
+        std::cout << "pmp_ok() FAILED!!!" << std::endl;
     throw_access_exception(virt, addr, access_info.flags.ss_access ? STORE : type);
+  }
   return paddr;
 }
 
@@ -92,7 +90,7 @@ inline mmu_t::insn_parcel_t mmu_t::perform_intrapage_fetch(reg_t vaddr, uintptr_
     memcpy(&res, (char*)host_addr, sizeof(res));
   else if (!mmio_fetch(paddr, sizeof(res), (uint8_t*)&res))
     throw trap_instruction_access_fault(proc->state.v, vaddr, 0, 0);
-
+  curr_fetch_paddr = paddr; /*code ext*/
   return res;
 }
 
@@ -111,53 +109,63 @@ mmu_t::insn_parcel_t mmu_t::fetch_slow_path(reg_t vaddr)
 
   auto [tlb_hit, host_addr, paddr] = access_tlb(tlb_insn, vaddr, TLB_FLAGS);
   auto access_info = generate_access_info(vaddr, FETCH, {});
-
-  if (check_triggers_fetch)
-    check_triggers(triggers::OPERATION_EXECUTE, vaddr,
-      access_info.effective_virt, sizeof(insn_parcel_t));
+  check_triggers(triggers::OPERATION_EXECUTE, vaddr, access_info.effective_virt);
 
   if (!tlb_hit) {
     paddr = translate(access_info, sizeof(insn_parcel_t));
     host_addr = (uintptr_t)sim->addr_to_mem(paddr);
-
-    if (proc->extension_enabled(EXT_ZICCID)) {
-      // Maintain exclusion with all store TLBs
-      for (auto [_, p2] : sim->get_harts())
-        p2->mmu->flush_stlb_ppn(paddr >> PGSHIFT);
-
-      tlb_insn_reverse_tags.insert(paddr >> PGSHIFT);
-    }
 
     refill_tlb(vaddr, paddr, (char*)host_addr, FETCH);
   }
 
   auto res = perform_intrapage_fetch(vaddr, host_addr, paddr);
 
-  if (!check_triggers_fetch)
-    return res;
-
-  check_triggers(triggers::OPERATION_EXECUTE, vaddr,
-    access_info.effective_virt, sizeof(insn_parcel_t), from_le(res));
+  check_triggers(triggers::OPERATION_EXECUTE, vaddr, access_info.effective_virt, from_le(res));
 
   return res;
 }
 
-static reg_t reg_from_bytes(size_t len, const uint8_t* bytes)
+reg_t reg_from_bytes(size_t len, const uint8_t* bytes)
 {
-  assert(len <= sizeof(reg_t));
-
-  size_t res = 0;
-  for (size_t i = 0; i < len; i++)
-    res = (res << 8) | bytes[len - 1 - i];
-  return res;
+  switch (len) {
+    case 1:
+      return bytes[0];
+    case 2:
+      return bytes[0] |
+        (((reg_t) bytes[1]) << 8);
+    case 4:
+      return bytes[0] |
+        (((reg_t) bytes[1]) << 8) |
+        (((reg_t) bytes[2]) << 16) |
+        (((reg_t) bytes[3]) << 24);
+    case 8:
+      return bytes[0] |
+        (((reg_t) bytes[1]) << 8) |
+        (((reg_t) bytes[2]) << 16) |
+        (((reg_t) bytes[3]) << 24) |
+        (((reg_t) bytes[4]) << 32) |
+        (((reg_t) bytes[5]) << 40) |
+        (((reg_t) bytes[6]) << 48) |
+        (((reg_t) bytes[7]) << 56);
+  }
+  abort();
 }
 
 bool mmu_t::mmio_ok(reg_t paddr, access_type UNUSED type)
 {
+  // RIVAI: debug info
+  if (proc->get_cfg().debug_info)
+  {
+    std::cout << "paddr: " << std::hex << paddr << std::endl;
+    std::cout << "DEBUG_START ~ DEBUG_END: "<< std::hex << DEBUG_START << " ~ " << std::hex << DEBUG_END << std::endl;
+  }
+
   // Disallow access to debug region when not in debug mode
-  reg_t debug_start = DEBUG_START; // suppress -Wtype-limits
-  if (paddr >= debug_start && paddr - debug_start < DEBUG_SIZE && proc && !proc->state.debug_mode)
+  /*code ext beg*/
+  // static_assert(DEBUG_START == 0);
+  if (paddr >= DEBUG_START && paddr <= DEBUG_END && proc && !proc->state.debug_mode)
     return false;
+  /*code ext end*/
 
   return true;
 }
@@ -203,47 +211,36 @@ bool mmu_t::mmio(reg_t paddr, size_t len, uint8_t* bytes, access_type type)
   return true;
 }
 
-void mmu_t::check_triggers(triggers::operation_t operation,
-  reg_t addr, bool virt, std::size_t data_size, const std::uint8_t* bytes)
-{
-  assert(data_size > 0);
-
-  check_triggers(operation, addr, virt, data_size, reg_from_bytes(std::min(data_size, sizeof(reg_t)), bytes));
-}
-
-void mmu_t::check_triggers(triggers::operation_t operation,
-  reg_t addr, bool virt, size_t access_len)
-{
-  check_triggers(operation, addr, virt, access_len, std::nullopt);
-}
-
-void mmu_t::check_triggers(triggers::operation_t operation, reg_t address, bool virt, std::size_t size, std::optional<reg_t> data)
+void mmu_t::check_triggers(triggers::operation_t operation, reg_t address, bool virt, reg_t tval, std::optional<reg_t> data)
 {
   if (matched_trigger || !proc)
     return;
 
-  auto match = proc->TM.detect_memory_access_match(operation, address, size, data);
-  if (!match.has_value())
-    return;
+  auto match = proc->TM.detect_memory_access_match(operation, address, data);
 
-  switch (match->timing) {
-    case triggers::TIMING_BEFORE:
-      throw triggers::matched_t(operation, address, match->action, virt);
+  if (match.has_value())
+    switch (match->timing) {
+      case triggers::TIMING_BEFORE:
+        throw triggers::matched_t(operation, tval, match->action, virt);
 
-    case triggers::TIMING_AFTER:
-      // We want to take this exception on the next instruction.  We check
-      // whether to do so in the I$ refill slow path, which we can force by
-      // flushing the TLB.
-      flush_tlb();
-      matched_trigger = triggers::matched_t(operation, address, match->action, virt);
-  }
+      case triggers::TIMING_AFTER:
+        // We want to take this exception on the next instruction.  We check
+        // whether to do so in the I$ refill slow path, which we can force by
+        // flushing the TLB.
+        flush_tlb();
+        matched_trigger = triggers::matched_t(operation, tval, match->action, virt);
+    }
 }
 
 inline void mmu_t::perform_intrapage_load(reg_t vaddr, uintptr_t host_addr, reg_t paddr, reg_t len, uint8_t* bytes, xlate_flags_t xlate_flags)
 {
+  mmu_trace.xf_log = xlate_flags;
   if (host_addr) {
     memcpy(bytes, (char*)host_addr, len);
   } else if (!mmio_load(paddr, len, bytes)) {
+    // RIVAI: debug info
+    if (proc->get_cfg().debug_info)
+      std::cout << "mmio_load() FAILED!!!" << std::endl;
     auto access_info = generate_access_info(vaddr, LOAD, xlate_flags);
     if (access_info.flags.ss_access)
       throw trap_store_access_fault(access_info.effective_virt, access_info.transformed_vaddr, 0, 0);
@@ -259,17 +256,21 @@ void mmu_t::load_slow_path_intrapage(reg_t len, uint8_t* bytes, mem_access_info_
 {
   reg_t vaddr = access_info.vaddr;
   auto [tlb_hit, host_addr, paddr] = access_tlb(tlb_load, vaddr, TLB_FLAGS);
-  bool special = access_info.flags.is_special_access() && !access_info.flags.lr;
-  if (!tlb_hit || special) {
+  ld_st_paddrs.push_back(paddr); /* code ext */
+  if (!tlb_hit || access_info.flags.is_special_access()) {
     paddr = translate(access_info, len);
     host_addr = (uintptr_t)sim->addr_to_mem(paddr);
+    ld_st_paddrs.back() = paddr; /* code ext */
 
-    if (!special)
+    if (!access_info.flags.is_special_access())
       refill_tlb(vaddr, paddr, (char*)host_addr, LOAD);
-  }
 
-  if (access_info.flags.lr && !sim->reservable(paddr)) {
-    throw trap_load_access_fault(access_info.effective_virt, access_info.transformed_vaddr, 0, 0);
+    if (access_info.flags.lr && !sim->reservable(paddr)) {
+      // RIVAI: debug info
+      if (proc->get_cfg().debug_info)
+        std::cout << "lr no reservable FAILED!!!" << std::endl;
+      throw trap_load_access_fault(access_info.effective_virt, access_info.transformed_vaddr, 0, 0);
+    }
   }
 
   perform_intrapage_load(vaddr, host_addr, paddr, len, bytes, access_info.flags);
@@ -279,11 +280,9 @@ void mmu_t::load_slow_path_intrapage(reg_t len, uint8_t* bytes, mem_access_info_
   }
 }
 
-void mmu_t::load_slow_path(reg_t original_addr, std::size_t len,
-  std::uint8_t* bytes, xlate_flags_t xlate_flags)
+void mmu_t::load_slow_path(reg_t original_addr, reg_t len, uint8_t* bytes, xlate_flags_t xlate_flags)
 {
-  assert(len > 0);
-
+  mmu_trace.xf_log = xlate_flags;
   if (likely(!xlate_flags.is_special_access())) {
     // Fast path for simple cases
     auto [tlb_hit, host_addr, paddr] = access_tlb(tlb_load, original_addr, TLB_FLAGS & ~TLB_CHECK_TRIGGERS);
@@ -297,22 +296,20 @@ void mmu_t::load_slow_path(reg_t original_addr, std::size_t len,
 
   auto access_info = generate_access_info(original_addr, LOAD, xlate_flags);
   reg_t transformed_addr = access_info.transformed_vaddr;
-
-  if (check_triggers_load)
-    check_triggers(triggers::OPERATION_LOAD,
-      transformed_addr, access_info.effective_virt, len);
+  check_triggers(triggers::OPERATION_LOAD, transformed_addr, access_info.effective_virt);
 
   if ((transformed_addr & (len - 1)) == 0) {
     load_slow_path_intrapage(len, bytes, access_info);
   } else {
     bool gva = access_info.effective_virt;
-    if (!is_misaligned_enabled())
+    /* code ext: Do further misaligned check. */
+    if (!is_misaligned_enabled() or is_illegal_misaligned_access(transformed_addr, len))
       throw trap_load_address_misaligned(gva, transformed_addr, 0, 0);
 
     if (access_info.flags.lr)
       throw trap_load_access_fault(gva, transformed_addr, 0, 0);
 
-    reg_t len_page0 = std::min<reg_t>(len, PGSIZE - transformed_addr % PGSIZE);
+    reg_t len_page0 = std::min(len, PGSIZE - transformed_addr % PGSIZE);
     load_slow_path_intrapage(len_page0, bytes, access_info);
     if (len_page0 != len) {
       auto tail_access_info = generate_access_info(original_addr + len_page0, LOAD, xlate_flags);
@@ -320,19 +317,21 @@ void mmu_t::load_slow_path(reg_t original_addr, std::size_t len,
     }
   }
 
-  if (!proc)
-    return;
-
-  if (check_triggers_load)
-    check_triggers(triggers::OPERATION_LOAD,
-      transformed_addr, access_info.effective_virt, len, bytes);
-
-  if (unlikely(proc->get_log_commits_enabled()))
+  while (len > sizeof(reg_t)) {
+    check_triggers(triggers::OPERATION_LOAD, transformed_addr, access_info.effective_virt, reg_from_bytes(sizeof(reg_t), bytes));
+    len -= sizeof(reg_t);
+    bytes += sizeof(reg_t);
+  }
+  check_triggers(triggers::OPERATION_LOAD, transformed_addr, access_info.effective_virt, reg_from_bytes(len, bytes));
+  /*code ext beg
+  if (proc && unlikely(proc->get_log_commits_enabled()))
     proc->state.log_mem_read.push_back(std::make_tuple(original_addr, 0, len));
+  code ext end*/
 }
 
 inline void mmu_t::perform_intrapage_store(reg_t vaddr, uintptr_t host_addr, reg_t paddr, reg_t len, const uint8_t* bytes, xlate_flags_t xlate_flags)
 {
+  mmu_trace.xf_log = xlate_flags;
   if (host_addr) {
      memcpy((char*)host_addr, bytes, len);
   } else if (!mmio_store(paddr, len, bytes)) {
@@ -348,17 +347,11 @@ void mmu_t::store_slow_path_intrapage(reg_t len, const uint8_t* bytes, mem_acces
 {
   reg_t vaddr = access_info.vaddr;
   auto [tlb_hit, host_addr, paddr] = access_tlb(tlb_store, vaddr, TLB_FLAGS);
+  ld_st_paddrs.push_back(paddr); /* code ext */
   if (!tlb_hit || access_info.flags.is_special_access()) {
     paddr = translate(access_info, len);
     host_addr = (uintptr_t)sim->addr_to_mem(paddr);
-
-    if (proc && proc->extension_enabled(EXT_ZICCID)) {
-      // Maintain exclusion with all instruction TLBs
-      for (auto [_, p2] : sim->get_harts())
-        p2->mmu->flush_itlb_ppn(paddr >> PGSHIFT);
-
-      tlb_store_reverse_tags.insert(paddr >> PGSHIFT);
-    }
+    ld_st_paddrs.back() = paddr;
 
     if (!access_info.flags.is_special_access())
       refill_tlb(vaddr, paddr, (char*)host_addr, STORE);
@@ -368,10 +361,9 @@ void mmu_t::store_slow_path_intrapage(reg_t len, const uint8_t* bytes, mem_acces
     perform_intrapage_store(vaddr, host_addr, paddr, len, bytes, access_info.flags);
 }
 
-void mmu_t::store_slow_path(reg_t original_addr, std::size_t len,
-    const std::uint8_t* bytes, xlate_flags_t xlate_flags,
-    bool actually_store, bool UNUSED require_alignment)
+void mmu_t::store_slow_path(reg_t original_addr, reg_t len, const uint8_t* bytes, xlate_flags_t xlate_flags, bool actually_store, bool UNUSED require_alignment)
 {
+  mmu_trace.xf_log = xlate_flags;
   if (likely(!xlate_flags.is_special_access())) {
     // Fast path for simple cases
     auto [tlb_hit, host_addr, paddr] = access_tlb(tlb_store, original_addr, TLB_FLAGS & ~TLB_CHECK_TRIGGERS);
@@ -387,20 +379,29 @@ void mmu_t::store_slow_path(reg_t original_addr, std::size_t len,
 
   auto access_info = generate_access_info(original_addr, STORE, xlate_flags);
   reg_t transformed_addr = access_info.transformed_vaddr;
-
-  if (actually_store && check_triggers_store)
-    check_triggers(triggers::OPERATION_STORE,
-      transformed_addr, access_info.effective_virt, len, bytes);
+  if (actually_store) {
+    reg_t trig_len = len;
+    const uint8_t* trig_bytes = bytes;
+    while (trig_len > sizeof(reg_t)) {
+      check_triggers(triggers::OPERATION_STORE, transformed_addr, access_info.effective_virt, reg_from_bytes(sizeof(reg_t), trig_bytes));
+      trig_len -= sizeof(reg_t);
+      trig_bytes += sizeof(reg_t);
+    }
+    check_triggers(triggers::OPERATION_STORE, transformed_addr, access_info.effective_virt, reg_from_bytes(trig_len, trig_bytes));
+  }
 
   if (transformed_addr & (len - 1)) {
     bool gva = access_info.effective_virt;
-    if (!is_misaligned_enabled())
+    /* code ext: Do further misaligned check. */
+    if (!is_misaligned_enabled() or is_illegal_misaligned_access(transformed_addr, len))
       throw trap_store_address_misaligned(gva, transformed_addr, 0, 0);
 
-    if (require_alignment)
-      throw trap_store_access_fault(gva, transformed_addr, 0, 0);
+    /* code ext: Spike bug: AMO misaligned checked again by require_alignment */
+    // if (require_alignment)
+    //   throw trap_store_access_fault(gva, transformed_addr, 0, 0);
+    /* code ext end */
 
-    reg_t len_page0 = std::min<reg_t>(len, PGSIZE - transformed_addr % PGSIZE);
+    reg_t len_page0 = std::min(len, PGSIZE - transformed_addr % PGSIZE);
     store_slow_path_intrapage(len_page0, bytes, access_info, actually_store);
     if (len_page0 != len) {
       auto tail_access_info = generate_access_info(original_addr + len_page0, STORE, xlate_flags);
@@ -410,42 +411,10 @@ void mmu_t::store_slow_path(reg_t original_addr, std::size_t len,
     store_slow_path_intrapage(len, bytes, access_info, actually_store);
   }
 
-  if (actually_store && proc && unlikely(proc->get_log_commits_enabled())) {
-    for (size_t offset = 0; offset < len; offset += sizeof(reg_t)) {
-      auto this_size = std::min(len - offset, sizeof(reg_t));
-      auto this_data = reg_from_bytes(this_size, bytes + offset);
-      proc->state.log_mem_write.push_back(std::make_tuple(original_addr + offset, this_data, this_size));
-    }
-  }
-}
-
-bool mmu_t::flush_tlb_ppn(reg_t ppn, dtlb_entry_t* tlb, reverse_tags_t& filter)
-{
-  if (!filter.contains(ppn))
-    return false;
-
-  filter.clear();
-
-  for (size_t i = 0; i < TLB_ENTRIES; i++) {
-    auto entry_ppn = tlb[i].data.target_addr >> PGSHIFT;
-    if (entry_ppn == ppn)
-      tlb[i].tag = -1;
-    else if (tlb[i].tag != (reg_t)-1)
-      filter.insert(entry_ppn);
-  }
-
-  return true;
-}
-
-void mmu_t::flush_stlb_ppn(reg_t ppn)
-{
-  flush_tlb_ppn(ppn, tlb_store, tlb_store_reverse_tags);
-}
-
-void mmu_t::flush_itlb_ppn(reg_t ppn)
-{
-  if (flush_tlb_ppn(ppn, tlb_insn, tlb_insn_reverse_tags))
-    flush_icache();
+  /* code ext beg
+  if (actually_store && proc && unlikely(proc->get_log_commits_enabled()))
+    proc->state.log_mem_write.push_back(std::make_tuple(original_addr, reg_from_bytes(len, bytes), len));
+  code ext end*/
 }
 
 tlb_entry_t mmu_t::refill_tlb(reg_t vaddr, reg_t paddr, char* host_addr, access_type type)
@@ -489,16 +458,13 @@ bool mmu_t::pmp_ok(reg_t addr, reg_t len, access_type type, reg_t mode, bool hlv
   if (!proc || proc->n_pmp == 0)
     return true;
 
-  reg_t gran = reg_t(1) << proc->lg_pmp_granularity;
-  reg_t addr_aligned = addr & -gran;
-  reg_t len_aligned = ((addr + len + gran - 1) & -gran) - addr_aligned;
-
   for (size_t i = 0; i < proc->n_pmp; i++) {
-    // Check each PMP-granularity sector of the access
+    // Check each 4-byte sector of the access
     bool any_match = false;
     bool all_match = true;
-    for (reg_t offset = 0; offset < len_aligned; offset += gran) {
-      bool match = proc->state.pmpaddr[i]->match4(addr_aligned + offset);
+    for (reg_t offset = 0; offset < len; offset += 1 << PMP_SHIFT) {
+      reg_t cur_addr = addr + offset;
+      bool match = proc->state.pmpaddr[i]->match4(cur_addr);
       any_match |= match;
       all_match &= match;
     }
@@ -506,7 +472,18 @@ bool mmu_t::pmp_ok(reg_t addr, reg_t len, access_type type, reg_t mode, bool hlv
     if (any_match) {
       // If the PMP matches only a strict subset of the access, fail it
       if (!all_match)
+      {
+
+        // RIVAI: debug info
+        if (proc->get_cfg().debug_info)
+        {
+          std::cout << "pmpaddr not all match FAILED!!!" << std::endl;
+          std::cout << "i: " << i << std::endl;
+          std::cout << "type: " << type << std::endl;
+          std::cout << "hlvx: " << hlvx << std::endl << std::endl;
+        }
         return false;
+      }
 
       return proc->state.pmpaddr[i]->access_ok(type, mode, hlvx);
     }
@@ -534,7 +511,7 @@ reg_t mmu_t::pmp_homogeneous(reg_t addr, reg_t len)
   return true;
 }
 
-reg_t mmu_t::s2xlate(reg_t gva, reg_t gpa, access_type type, access_type trap_type, bool virt, bool hlvx, bool is_for_vs_pt_addr)
+reg_t mmu_t::s2xlate(reg_t gva, reg_t gpa, access_type type, access_type trap_type, bool virt, bool hlvx, bool is_for_vs_pt_addr, bool readonly/*code ext*/)
 {
   if (!virt)
     return gpa;
@@ -572,30 +549,50 @@ reg_t mmu_t::s2xlate(reg_t gva, reg_t gpa, access_type type, access_type trap_ty
       int napot_bits = ((pte & PTE_N) ? (ctz(ppn) + 1) : 0);
 
       if (pte & PTE_RSVD) {
-        break;
-      } else if (!proc->extension_enabled(EXT_SVRSW60T59B) && (pte & PTE_SVRSW60T59B)) {
+        if (proc->get_cfg().debug_info) // RIVAI: debug info
+          std::cout << "FAULT: RSVD not all zero" << std::endl;
         break;
       } else if (!proc->extension_enabled(EXT_SVNAPOT) && (pte & PTE_N)) {
+        if (proc->get_cfg().debug_info) // RIVAI: debug info
+          std::cout << "FAULT: SVNAPOT N bit not zero" << std::endl;
         break;
       } else if (!pbmte && (pte & PTE_PBMT)) {
+        if (proc->get_cfg().debug_info) // RIVAI: debug info
+          std::cout << "FAULT: pbmte zero but PBMT bit not zero" << std::endl;
         break;
       } else if ((pte & PTE_PBMT) == PTE_PBMT) {
+        if (proc->get_cfg().debug_info) // RIVAI: debug info
+          std::cout << "FAULT: PBMT bit is 0x3 reserved" << std::endl;
         break;
       } else if (PTE_TABLE(pte)) { // next level of page table
         if (pte & (PTE_D | PTE_A | PTE_U | PTE_N | PTE_PBMT))
+        {
+          if (proc->get_cfg().debug_info) // RIVAI: debug info
+            std::cout << "FAULT: non leaf pte with A/D/U/N/PBMT bit" << std::endl;
           break;
+        }
         base = ppn << PGSHIFT;
       } else if (!(pte & PTE_V) || (!(pte & PTE_R) && (pte & PTE_W))) {
+        if (proc->get_cfg().debug_info) // RIVAI: debug info
+          std::cout << "FAULT: V bit or R+W bit" << std::endl;
         break;
       } else if (((pte & PTE_N) && (ppn == 0 || i != 0)) || (napot_bits != 0 && napot_bits != 4)) {
+        if (proc->get_cfg().debug_info) // RIVAI: debug info
+        { std::cout << "FAULT: napot no 0 or 4" << std::endl; }
         break;
       } else if (!(pte & PTE_U)) {
+        if (proc->get_cfg().debug_info) // RIVAI: debug info
+          std::cout << "FAULT: U bit" << std::endl;
         break;
       } else if (type == FETCH || hlvx ? !(pte & PTE_X) :
                  type == LOAD          ? !(pte & PTE_R) && !(mxr && (pte & PTE_X)) :
                                          !((pte & PTE_R) && (pte & PTE_W))) {
+        if (proc->get_cfg().debug_info) // RIVAI: debug info
+          std::cout << "FAULT: XRW error" << std::endl;
         break;
       } else if ((ppn & ((reg_t(1) << ptshift) - 1)) != 0) {
+        if (proc->get_cfg().debug_info) // RIVAI: debug info
+          std::cout << "FAULT: PPN not aligned" << std::endl;
         break;
       } else {
         reg_t ad = PTE_A | ((type == STORE) * PTE_D);
@@ -603,9 +600,14 @@ reg_t mmu_t::s2xlate(reg_t gva, reg_t gpa, access_type type, access_type trap_ty
         if ((pte & ad) != ad) {
           if (hade) {
             // set accessed and possibly dirty bits
-            pte_store(pte_paddr, pte | ad, gva, virt, trap_type, vm.ptesize);
+            /* code ext: If readonly, pte won't change. */
+            if (not readonly)
+              pte_store(pte_paddr, pte | ad, gva, virt, type, vm.ptesize);
+            /* code ext end */
           } else {
             // take exception if access or possibly dirty bit is not set.
+            if (proc->get_cfg().debug_info) // RIVAI: debug info
+              std::cout << "FAULT: SVADU with no A or D bit" << std::endl;
             break;
           }
         }
@@ -629,37 +631,9 @@ reg_t mmu_t::s2xlate(reg_t gva, reg_t gpa, access_type type, access_type trap_ty
   }
 }
 
-bool mmu_t::svukte_qualified(mem_access_info_t access_info)
+reg_t mmu_t::walk(mem_access_info_t access_info, bool skip_exception)
 {
-  state_t* state = proc->get_state();
-
-  if (access_info.effective_priv != PRV_U)
-    return false;
-
-  bool ukte = get_field(state->senvcfg->read(), SENVCFG_UKTE);
-  if (access_info.flags.forced_virt && state->prv == PRV_U)
-    ukte = get_field(state->hstatus->read(), HSTATUS_HUKTE);
-
-  if (!ukte)
-    return false;
-
-  reg_t mode_mask = proc->get_xlen() == 32 ? SATP32_MODE : SATP64_MODE;
-  if (get_field(proc->get_state()->satp->readvirt(access_info.effective_virt), mode_mask) == 0)
-    return false;
-
-  return true;
-}
-
-bool mmu_t::svukte_fault(reg_t addr, mem_access_info_t access_info)
-{
-  if (!svukte_qualified(access_info))
-    return false;
-
-  return addr >> (proc->get_xlen() - 1);
-}
-
-reg_t mmu_t::walk(mem_access_info_t access_info)
-{
+  mmu_trace.excp_cause = CAUSE_NO_EXCEPTION;
   access_type type = access_info.type;
   reg_t addr = access_info.transformed_vaddr;
   bool virt = access_info.effective_virt;
@@ -678,11 +652,7 @@ reg_t mmu_t::walk(mem_access_info_t access_info)
   }
 
   if (vm.levels == 0)
-    return s2xlate(addr, addr & ((reg_t(2) << (proc->xlen-1))-1), type, type, virt, hlvx, false) & ~page_mask; // zero-extend from xlen
-
-  if (svukte_fault(addr, access_info)) {
-    throw_page_fault_exception(virt, addr, type);
-  }
+    return s2xlate(addr, addr & ((reg_t(2) << (proc->xlen-1))-1), type, type, virt, hlvx, false, access_info.readonly/*code ext*/) & ~page_mask; // zero-extend from xlen
 
   bool s_mode = mode == PRV_S;
   bool sum = proc->state.sstatus->readvirt(virt) & MSTATUS_SUM;
@@ -701,9 +671,18 @@ reg_t mmu_t::walk(mem_access_info_t access_info)
     reg_t idx = (addr >> (PGSHIFT + ptshift)) & ((1 << vm.idxbits) - 1);
 
     // check that physical address of PTE is legal
-    auto pte_paddr = s2xlate(addr, base + idx * vm.ptesize, LOAD, type, virt, false, true);
+    auto pte_paddr = s2xlate(addr, base + idx * vm.ptesize, LOAD, type, virt, false, true, access_info.readonly/*code ext*/);
+    mmu_trace.pte_paddr[i] = pte_paddr;
     reg_t pte = pte_load(pte_paddr, addr, virt, type, vm.ptesize);
     reg_t ppn = (pte & ~reg_t(PTE_ATTR)) >> PTE_PPN_SHIFT;
+
+    // RIVAI: debug info
+    if (proc->get_cfg().debug_info)
+    {
+      std::cout << "vm.levels:" << i << "pte_paddr:" << std::hex << pte_paddr << std::endl;
+      std::cout << "PTE: " << std::hex << pte << std::endl;
+    }
+
     bool pbmte = virt ? (proc->get_state()->henvcfg->read() & HENVCFG_PBMTE) : (proc->get_state()->menvcfg->read() & MENVCFG_PBMTE);
     bool hade = virt ? (proc->get_state()->henvcfg->read() & HENVCFG_ADUE) : (proc->get_state()->menvcfg->read() & MENVCFG_ADUE);
     bool sse = virt ? (proc->get_state()->henvcfg->read() & HENVCFG_SSE) : (proc->get_state()->menvcfg->read() & MENVCFG_SSE);
@@ -711,43 +690,69 @@ reg_t mmu_t::walk(mem_access_info_t access_info)
     int napot_bits = ((pte & PTE_N) ? (ctz(ppn) + 1) : 0);
 
     if (pte & PTE_RSVD) {
+      if (proc->get_cfg().debug_info) // RIVAI: debug info
+        std::cout << "FAULT: RSVD not all zero" << std::endl;
       break;
-    } else if (!proc->extension_enabled(EXT_SVRSW60T59B) && (pte & PTE_SVRSW60T59B)) {
-        break;
     } else if (!proc->extension_enabled(EXT_SVNAPOT) && (pte & PTE_N)) {
+      if (proc->get_cfg().debug_info) // RIVAI: debug info
+        std::cout << "FAULT: SVNAPOT N bit not zero" << std::endl;
       break;
     } else if (!pbmte && (pte & PTE_PBMT)) {
+      if (proc->get_cfg().debug_info) // RIVAI: debug info
+        std::cout << "FAULT: pbmte zero but PBMT bit not zero" << std::endl;
       break;
     } else if ((pte & PTE_PBMT) == PTE_PBMT) {
+      if (proc->get_cfg().debug_info) // RIVAI: debug info
+        std::cout << "FAULT: PBMT bit is 0x3 reserved" << std::endl;
       break;
     } else if (PTE_TABLE(pte)) { // next level of page table
       if (pte & (PTE_D | PTE_A | PTE_U | PTE_N | PTE_PBMT))
+      {
+        if (proc->get_cfg().debug_info) // RIVAI: debug info
+          std::cout << "FAULT: non leaf pte with A/D/U/N/PBMT bit" << std::endl;
         break;
+      }
       base = ppn << PGSHIFT;
     } else if ((pte & PTE_U) ? s_mode && (type == FETCH || !sum) : !s_mode) {
+      if (proc->get_cfg().debug_info) // RIVAI: debug info
+        std::cout << "FAULT: U bit" << std::endl;
       break;
     } else if (!(pte & PTE_V) ||
               (!(pte & PTE_R) && (pte & PTE_W) && ((!sse && !(pte & PTE_X)) || (pte & PTE_X)))) {
       // invalid
       // not shadow stack access xwr=110 or xwr=010 page cause page fault
       // shadow stack access with PTE_X moved to following check
+      if (proc->get_cfg().debug_info) // RIVAI: debug info
+          std::cout << "FAULT: not valid or no R+W or sse no X" << std::endl;
       break;
     } else if (((pte & PTE_N) && (ppn == 0 || i != 0)) || (napot_bits != 0 && napot_bits != 4)) {
+      if (proc->get_cfg().debug_info) // RIVAI: debug info
+        std::cout << "FAULT: napot no 0 or 4" << std::endl;
       break;
     } else if ((ppn & ((reg_t(1) << ptshift) - 1)) != 0) {
+      if (proc->get_cfg().debug_info) // RIVAI: debug info
+        std::cout << "FAULT: PPN not aligned" << std::endl;
       break;
     } else if (ss_page && ((type == STORE && !ss_access) || access_info.flags.clean_inval)) {
       // non-shadow-stack store or CBO with xwr = 010 causes access-fault
+      if (proc->get_cfg().debug_info) // RIVAI: debug info
+        std::cout << "FAULT: ss page with no ss store" << std::endl;
       throw trap_store_access_fault(virt, addr, 0, 0);
     } else if (ss_page && type == FETCH) {
       // fetch from shadow stack pages cause instruction access-fault
+      if (proc->get_cfg().debug_info) // RIVAI: debug info
+        std::cout << "FAULT: ss page with fetch" << std::endl;
       throw trap_instruction_access_fault(virt, addr, 0, 0);
     } else if ((((pte & PTE_R) && (pte & PTE_W)) || (pte & PTE_X)) && ss_access) {
       // shadow stack access cause store access fault if xwr!=010 and xwr!=001
+      if (proc->get_cfg().debug_info) // RIVAI: debug info
+        std::cout << "FAULT: ss access with not 010 or 001" << std::endl;
       throw trap_store_access_fault(virt, addr, 0, 0);
     } else if (type == FETCH || hlvx ? !(pte & PTE_X) :
                type == LOAD          ? !(sse && ss_page) && !(pte & PTE_R) && !(mxr && (pte & PTE_X)) :
                                        !(pte & PTE_W)) {
+      if (proc->get_cfg().debug_info) // RIVAI: debug info
+        std::cout << "FAULT: XWR error" << std::endl;
       break;
     } else {
       reg_t ad = PTE_A | ((type == STORE) * PTE_D);
@@ -756,11 +761,16 @@ reg_t mmu_t::walk(mem_access_info_t access_info)
         if (hade) {
           // Check for write permission to the first-stage PT in second-stage
           // PTE and set the D bit in the second-stage PTE if needed
-          s2xlate(addr, base + idx * vm.ptesize, STORE, type, virt, false, true);
+          s2xlate(addr, base + idx * vm.ptesize, STORE, type, virt, false, true, access_info.readonly/*code ext*/);
           // set accessed and possibly dirty bits.
-          pte_store(pte_paddr, pte | ad, addr, virt, type, vm.ptesize);
+          /* code ext: If readonly, pte won't change. */
+          if (not access_info.readonly)
+            pte_store(pte_paddr, pte | ad, addr, virt, type, vm.ptesize);
+          /* code ext end */
         } else {
           // take exception if access or possibly dirty bit is not set.
+          if (proc->get_cfg().debug_info) // RIVAI: debug info
+            std::cout << "FAULT: SVADU with no A or D bit" << std::endl;
           break;
         }
       }
@@ -772,11 +782,52 @@ reg_t mmu_t::walk(mem_access_info_t access_info)
                         | (vpn & ((reg_t(1) << napot_bits) - 1))
                         | (vpn & ((reg_t(1) << ptshift) - 1))) << PGSHIFT;
       reg_t phys = page_base | (addr & page_mask);
-      return s2xlate(addr, phys, type, type, virt, hlvx, false) & ~page_mask;
+      return s2xlate(addr, phys, type, type, virt, hlvx, false, access_info.readonly/*code ext*/) & ~page_mask;
     }
   }
 
-  throw_page_fault_exception(virt, addr, type);
+  if (skip_exception)
+  {
+    switch (type) {
+      case FETCH: mmu_trace.excp_cause = CAUSE_FETCH_PAGE_FAULT;
+      case LOAD : mmu_trace.excp_cause = CAUSE_LOAD_PAGE_FAULT;
+      case STORE: mmu_trace.excp_cause = CAUSE_STORE_PAGE_FAULT;
+    }
+    return 0;
+  }
+  else
+  {
+    switch (type) {
+      case FETCH: throw trap_instruction_page_fault(virt, addr, 0, 0);
+      case LOAD: throw trap_load_page_fault(virt, addr, 0, 0);
+      case STORE: throw trap_store_page_fault(virt, addr, 0, 0);
+      default: abort();
+    }
+  }
+}
+
+
+// todo
+mmu_trace_t mmu_t::fetch_page_table_walk(reg_t vaddr)
+{
+    mmu_trace = {.paddr=0, .pte_paddr={0}, .levels=-1, .excp_cause=CAUSE_NO_EXCEPTION};
+    auto access_info = generate_access_info(vaddr, access_type::FETCH, {});
+    access_info.readonly = true;
+  
+    bool virt = access_info.effective_virt;
+    reg_t mode = (reg_t) access_info.effective_priv;
+  
+    mmu_trace.paddr = walk(access_info) | (vaddr & (PGSIZE-1), true);
+
+    if (!pmp_ok(mmu_trace.paddr, 2, access_info.type, mode, access_info.flags.hlvx))
+    {
+        // RIVAI: debug info
+        if (proc->get_cfg().debug_info)
+            std::cout << "pmp_ok() FAILED!!!" << std::endl;
+        mmu_trace.excp_cause = CAUSE_FETCH_ACCESS;
+    }
+
+    return mmu_trace;
 }
 
 void mmu_t::register_memtracer(memtracer_t* t)
@@ -786,6 +837,7 @@ void mmu_t::register_memtracer(memtracer_t* t)
 }
 
 reg_t mmu_t::get_pmlen(bool effective_virt, reg_t effective_priv, xlate_flags_t flags) const {
+  // const_cast<xlate_flags_t>(mmu_trace.xf_log) = flags;
   if (!proc || proc->get_xlen() != 64 || flags.hlvx)
     return 0;
 
@@ -813,6 +865,7 @@ reg_t mmu_t::get_pmlen(bool effective_virt, reg_t effective_priv, xlate_flags_t 
 }
 
 mem_access_info_t mmu_t::generate_access_info(reg_t addr, access_type type, xlate_flags_t xlate_flags) {
+  mmu_trace.xf_log = xlate_flags;
   if (!proc)
     return {addr, addr, 0, false, {}, type};
   bool virt = proc->state.v;
@@ -834,5 +887,37 @@ mem_access_info_t mmu_t::generate_access_info(reg_t addr, access_type type, xlat
     bool is_physical_addr = mode == PRV_M || get_field(satp, SATP64_MODE) == SATP_MODE_OFF;
     transformed_addr = is_physical_addr ? zext(addr, xlen - pmlen) : sext(addr, xlen - pmlen);
   }
+  last_effective_priv = mode; /* code ext */
   return {addr, transformed_addr, mode, virt, xlate_flags, type};
 }
+
+// code ext beg
+uint64_t mmu_t::vaddr2paddr(uint64_t vaddr) {
+  auto access_info = generate_access_info(vaddr, access_type::FETCH, {});
+  access_info.readonly = true;
+  reg_t paddr = translate(access_info, 1);
+  return paddr;
+}
+
+uint64_t mmu_t::vaddr2paddr(uint64_t vaddr, size_t len, access_type type) {
+  auto access_info = generate_access_info(vaddr, type, {});
+  access_info.readonly = true;
+  reg_t paddr = translate(access_info, len);
+  return paddr;
+}
+
+/* Do further misaligned check, such as 16B cross check. */
+bool mmu_t::is_illegal_misaligned_access(reg_t transformed_addr, size_t len) {
+  if (not proc or proc->get_cfg().misaligned_mode == 0) {
+    return false;
+  }
+
+  constexpr size_t HALF_WORD = 2;
+  constexpr size_t WORD = 4;
+  constexpr size_t DOUBLE_WORD = 8;
+  return (len == HALF_WORD and ((transformed_addr & 0b1111) == 0b1111)) or /* half: 0b1111 cross 16-bytes */
+         (len == WORD and ((transformed_addr & 0b1111) >= 0b1101)) or /* word: 0b1101+ cross 16-bytes */
+         (len == DOUBLE_WORD and ((transformed_addr & 0b1111) >= 0b1001)); /* double: 0b1001+ cross 16-bytes */
+}
+
+// code ext end

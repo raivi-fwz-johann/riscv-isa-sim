@@ -1,5 +1,5 @@
 require_extension('S');
-require(p->has_mmu());
+require_impl(IMPL_MMU);
 if (STATE.v) {
   if (STATE.prv == PRV_U || get_field(STATE.hstatus->read(), HSTATUS_VTVM))
     require_novirt();

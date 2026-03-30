@@ -68,6 +68,7 @@ public:
   const char *            bootargs;
   const char *            isa;
   const char *            priv;
+  bool                    misaligned;
   endianness_t            endianness;
   reg_t                   pmpregions;
   reg_t                   pmpgranularity;
@@ -79,6 +80,17 @@ public:
   reg_t                   trigger_count;
   reg_t                   cache_blocksz;
   std::optional<abstract_sim_if_t*> external_simulator;
+  bool                    explicit_isa = false; // code ext: for using commandline isa instead of dtb isa.
+  size_t                  interleave = 0; // code ext: for controlling core switch when running, disabled by default.
+  bool                    disable_host = false; // code ext: whether communicate with host.
+  bool                    explicit_nproc = false; // code ext: whether -p=<n> is given.
+  mutable bool            deepctrl = false; //code ext: for spike deepctrl.
+  reg_t                   watch_addr{~reg_t(0)}; // code ext: Watch access behavior in watch_addr.
+  int                     misaligned_mode{0}; /* code ext: Support misaligned check extension. */
+  int                     pmpcsr_num{-1}; /* code ext: The number of pmp csr to be created. */
+  bool                    debug_info = false; /* code ext: Print debug info for MMU/PRIV/CSRS. */
+  bool                    vector_misaligned = false; /* code ext */
+  bool                    vector_16B_check = false;
 
   size_t nprocs() const { return hartids.size(); }
   size_t max_hartid() const { return hartids.back(); }

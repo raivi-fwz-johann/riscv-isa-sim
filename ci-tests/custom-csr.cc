@@ -37,7 +37,7 @@ struct xdummycsr_t : public extension_t {
   }
 };
 
-REGISTER_EXTENSION(dummycsr, []() { static xdummycsr_t ext; return &ext; })
+REGISTER_EXTENSION(dummycsr, []() { return new xdummycsr_t; })
 
 // Copied from spike main.
 // TODO: This should really be provided in libriscv
@@ -71,8 +71,7 @@ int main(int argc, char **argv) {
                                      .support_impebreak = true};
   std::vector<std::pair<reg_t, abstract_mem_t *>> mems =
       make_mems(cfg.mem_layout);
-  bool dtb_discovery=false;
-  sim_t sim(&cfg, false, mems, plugin_devices, dtb_discovery, htif_args, dm_config,
+  sim_t sim(&cfg, false, mems, plugin_devices, htif_args, dm_config,
             nullptr,  // log_path
             true,     // dtb_enabled
             nullptr,  // dtb_file

@@ -1,7 +1,6 @@
 // See LICENSE for license details.
 
 #include "config.h"
-#include "dtb_discovery.h"
 #include "sim.h"
 #include "mmu.h"
 #include "dts.h"
@@ -22,6 +21,18 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 
+#include "endflag.h"
+#include "easy_args.h"
+
+// code ext beg
+static void replace_isa(const char *dtb_file, const char **dtb_isa_ptr, const cfg_t* cfg) {
+  if (dtb_file != nullptr and cfg->explicit_isa) {
+    std::cout << "***Warnning*** Replace dtb isa: [" << *dtb_isa_ptr << "] by command line isa: [" << cfg->isa << "]" << std::endl;
+    *dtb_isa_ptr = cfg->isa;
+  }
+}
+// code ext end
+
 volatile bool ctrlc_pressed = false;
 static void handle_signal(int sig)
 {
@@ -31,16 +42,22 @@ static void handle_signal(int sig)
   signal(sig, &handle_signal);
 }
 
+// code ext beg
+#if(0)
 const size_t sim_t::INTERLEAVE;
+#endif
+// code ext end
 
 extern device_factory_t* clint_factory;
 extern device_factory_t* plic_factory;
 extern device_factory_t* ns16550_factory;
+// rivai beg
+extern device_factory_t* uart_z1_factory;
+// rivai end
 
 sim_t::sim_t(const cfg_t *cfg, bool halted,
              std::vector<std::pair<reg_t, abstract_mem_t*>> mems,
              const std::vector<device_factory_sargs_t>& plugin_device_factories,
-             const bool dtb_discovery,
              const std::vector<std::string>& args,
              const debug_module_config_t &dm_config,
              const char *log_path,
@@ -51,7 +68,6 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
   : htif_t(args),
     cfg(cfg),
     mems(mems),
-    dtb_discovery(dtb_discovery),
     dtb_enabled(dtb_enabled),
     log_file(log_path),
     cmd_file(cmd_file),
@@ -63,11 +79,17 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
     histogram_enabled(false),
     log(false),
     remote_bitbang(NULL),
+// rivai beg
+    simpoint_module(nullptr),
+// rivai end
     debug_module(this, dm_config)
 {
   signal(SIGINT, &handle_signal);
 
   sout_.rdbuf(std::cerr.rdbuf()); // debug output goes to stderr by default
+
+  for (auto& x : mems)
+    bus.add_device(x.first, x.second);
 
   bus.add_device(DEBUG_START, &debug_module);
 
@@ -88,7 +110,7 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
 
 #ifndef RISCV_ENABLE_DUAL_ENDIAN
   if (cfg->endianness != endianness_little) {
-    fputs("Big-endian support has not been properly enabled; "
+    fputs("Big-endian support has not been prroperly enabled; "
           "please rebuild the riscv-isa-sim project using "
           "\"configure --enable-dual-endian\".\n",
           stderr);
@@ -98,6 +120,13 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
 
   debug_mmu = new mmu_t(this, cfg->endianness, NULL, cfg->cache_blocksz);
 
+  // code ext beg
+  if (cfg->interleave != 0) {
+    set_interleave(cfg->interleave);
+  }
+  set_host_disabled(cfg->disable_host);
+  // code ext end
+
   // When running without using a dtb, skip the fdt-based configuration steps
   if (!dtb_enabled) {
     for (size_t i = 0; i < cfg->nprocs(); i++) {
@@ -105,7 +134,9 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
                                       cfg, this, cfg->hartids[i], halted,
                                       log_file.get(), sout_));
       harts[cfg->hartids[i]] = procs[i];
+      hartid_to_idx_map[cfg->hartids[i]] = i; /*code ext: record hartid*/
     }
+    std::cout << "Final cores count: " << procs.size() << std::endl; // code ext: print final cores count
     return;
   } // otherwise, generate the procs by parsing the DTS
 
@@ -118,9 +149,13 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
   // particular, the default device tree configuration that you get without
   // setting the dtb_file argument has one.
   std::vector<device_factory_sargs_t> device_factories = {
-    {clint_factory, {}},
-    {plic_factory, {}},
-    {ns16550_factory, {}}};
+    {clint_factory, {}}, // clint must be element 0
+    {plic_factory, {}}, // plic must be element 1
+    {ns16550_factory, {}},
+    {uart_z1_factory, {}} /*code ext: add uart_z1 factory*/};
+  device_factories.insert(device_factories.end(),
+                          plugin_device_factories.begin(),
+                          plugin_device_factories.end());
 
   // Load dtb_file if provided, otherwise self-generate a dts/dtb
   if (dtb_file) {
@@ -132,6 +167,7 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
     std::stringstream strstream;
     strstream << fin.rdbuf();
     dtb = strstream.str();
+    // dts = dtb_to_dts(dtb); // code ext: Comment it because of calling dtc crash in self-built process, but comment it will cause uart error.
   } else {
     std::string device_nodes;
     for (const device_factory_sargs_t& factory_sargs: device_factories) {
@@ -167,7 +203,11 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
 
   for (cpu_offset = fdt_get_first_subnode(fdt, cpu_offset); cpu_offset >= 0;
        cpu_offset = fdt_get_next_subnode(fdt, cpu_offset)) {
-
+    // code ext: if explicit_nproc is given, the number of core is constrained.
+    if (cfg->explicit_nproc and cpu_idx >= cfg->nprocs()) {
+      break;
+    }
+    // code ext end
     if (!(cpu_map_offset < 0) && cpu_offset == cpu_map_offset)
       continue;
 
@@ -183,6 +223,7 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
       std::cerr << "core (" << cpu_idx << ") has an invalid or missing 'riscv,isa'\n";
       exit(1);
     }
+    replace_isa(dtb_file, &isa_str, cfg); /*code ext*/
 
     // handle hartid
     uint32_t hartid;
@@ -196,6 +237,9 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
                                     cfg, this, hartid, halted,
                                     log_file.get(), sout_));
     harts[hartid] = procs[cpu_idx];
+    // code ext : record hartid.
+    hartid_to_idx_map[hartid] = cpu_idx;
+    // code ext end
 
     // handle pmp
     reg_t pmp_num, pmp_granularity;
@@ -210,16 +254,16 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
     // handle mmu-type
     const char *mmu_type;
     rc = fdt_parse_mmu_type(fdt, cpu_offset, &mmu_type);
-    procs[cpu_idx]->set_max_vaddr_bits(0);
     if (rc == 0) {
+      procs[cpu_idx]->set_mmu_capability(IMPL_MMU_SBARE);
       if (strncmp(mmu_type, "riscv,sv32", strlen("riscv,sv32")) == 0) {
-        procs[cpu_idx]->set_max_vaddr_bits(32);
+        procs[cpu_idx]->set_mmu_capability(IMPL_MMU_SV32);
       } else if (strncmp(mmu_type, "riscv,sv39", strlen("riscv,sv39")) == 0) {
-        procs[cpu_idx]->set_max_vaddr_bits(39);
+        procs[cpu_idx]->set_mmu_capability(IMPL_MMU_SV39);
       } else if (strncmp(mmu_type, "riscv,sv48", strlen("riscv,sv48")) == 0) {
-        procs[cpu_idx]->set_max_vaddr_bits(48);
+        procs[cpu_idx]->set_mmu_capability(IMPL_MMU_SV48);
       } else if (strncmp(mmu_type, "riscv,sv57", strlen("riscv,sv57")) == 0) {
-        procs[cpu_idx]->set_max_vaddr_bits(57);
+        procs[cpu_idx]->set_mmu_capability(IMPL_MMU_SV57);
       } else if (strncmp(mmu_type, "riscv,sbare", strlen("riscv,sbare")) == 0) {
         // has been set in the beginning
       } else {
@@ -229,35 +273,17 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
                   << mmu_type << ").\n";
         exit(1);
       }
+    } else {
+      procs[cpu_idx]->set_mmu_capability(IMPL_MMU_SBARE);
     }
 
     procs[cpu_idx]->reset();
 
     cpu_idx++;
   }
-
-  if (dtb_discovery)
-  {
-    //Add dtb discovered devices
-    std::vector<device_factory_sargs_t> dtb_discovery_plugin_device_factories;
-    dtb_discovery::discover_devices_from_dtb(fdt, dtb_discovery_plugin_device_factories);
-    device_factories.insert(device_factories.end(),
-                          dtb_discovery_plugin_device_factories.begin(),
-                          dtb_discovery_plugin_device_factories.end());
-
-    //Remove default memories and use dtb discovered memories
-    mems.clear();
-    dtb_discovery::discover_memory_from_dtb(fdt, mems);
-  }
-  //clint, plic, ns16550 are always discovered via dtb, independently from the --dtb_discovery flag
-  device_factories.insert(device_factories.end(),
-                          plugin_device_factories.begin(),
-                          plugin_device_factories.end());
-
-  for (auto& x : mems)
-  {
-      bus.add_device(x.first, x.second);
-  }
+  // code ext: print final cores count
+  std::cout << "Final cores count: " << procs.size() << std::endl;
+  // code ext end
 
   // must be located after procs/harts are set (devices might use sim_t get_* member functions)
   for (size_t i = 0; i < device_factories.size(); i++) {
@@ -270,36 +296,63 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
       std::shared_ptr<abstract_device_t> dev_ptr(device);
       add_device(device_base, dev_ptr);
 
-      if (dynamic_cast<clint_t*>(&*dev_ptr)) {
-        assert(!clint);
+      if (i == 0) // clint_factory
         clint = std::static_pointer_cast<clint_t>(dev_ptr);
-      }
-
-      if (dynamic_cast<plic_t*>(&*dev_ptr)) {
-        assert(!plic);
+      else if (i == 1) // plic_factory
         plic = std::static_pointer_cast<plic_t>(dev_ptr);
-      }
     }
   }
+  // code ext beg
+  tools_module = std::make_unique<tools_module_t>(this);
+  // code ext end
 }
 
 sim_t::~sim_t()
 {
+  // code ext beg
+  sout_ << CONNECT_ENDFLAG;
+  sout_.flush();
+  // code ext end
   for (size_t i = 0; i < procs.size(); i++)
     delete procs[i];
   delete debug_mmu;
+  // code ext beg
+  for (auto &mem : mems) {
+    delete mem.second;
+  }
+  // code ext end
 }
 
+// merge from p600v2 --ZQ
+void sim_t::exit_handler() {
+  sout_ << CONNECT_ENDFLAG;
+  sout_.flush();
+  for (size_t i = 0; i < nprocs(); i++) {
+    processor_t *p = get_core(i);
+    //// RiVAI: simpoint add --YC
+    if (simpoint_module) {
+      simpoint_module->simpoint_exit();
+    }
+    //// RiVAI: simpoint add end --YC
+    printf("core%u total instructions : %lu\n", p->get_id(),
+           p->get_state()->minstret->read());
+  }
+}
+// merge from p600v2 end --ZQ
 int sim_t::run()
 {
   if (!debug && log)
     set_procs_debug(true);
 
-  htif_t::set_expected_xlen(harts.begin()->second->get_isa().get_max_xlen());
+  htif_t::set_expected_xlen(harts[0]->get_isa().get_max_xlen());
 
   // htif_t::run() will repeatedly call back into sim_t::idle(), each
   // invocation of which will advance target time
-  return htif_t::run();
+  // merge from p600v2 --ZQ
+  int rv = htif_t::run();
+  exit_handler();
+  return rv;
+  // merge from p600v2 end --ZQ
 }
 
 void sim_t::step(size_t n)
@@ -313,19 +366,33 @@ void sim_t::step(size_t n)
     if (current_step == INTERLEAVE)
     {
       current_step = 0;
-      procs[current_proc]->get_mmu()->yield_load_reservation();
+      // procs[current_proc]->get_mmu()->yield_load_reservation(); // code ext: disable it because of alignment with rtl.
       if (++current_proc == procs.size()) {
         current_proc = 0;
-        reg_t rtc_ticks = INTERLEAVE / INSNS_PER_RTC_TICK;
-        for (auto &dev : devices) dev->tick(rtc_ticks);
+        // code ext beg
+        // handle deepctrl
+        if (get_cfg().deepctrl) {
+          // handle INTERLEAVE < INSNS_PER_RTC_TICK
+          reg_t rtc_ticks = (INTERLEAVE + REMAINDER) / INSNS_PER_RTC_TICK;
+          REMAINDER = (INTERLEAVE + REMAINDER) % INSNS_PER_RTC_TICK;
+          // need to handle other devices?
+          for (auto &dev : devices) {
+            if (auto clint = dynamic_cast<clint_t*>(dev.get())) {
+              clint->tick(0);
+            } else {
+              dev->tick(rtc_ticks);
+            }
+          }
+        } else {
+          reg_t rtc_ticks = INTERLEAVE / INSNS_PER_RTC_TICK;
+          for (auto &dev : devices) dev->tick(rtc_ticks);
+        }
+        // code ext end
       }
     }
   }
 }
-const char* sim_t::get_dts() {
-  dts = dtb_to_dts(dtb);
-  return dts.c_str(); 
-}
+
 void sim_t::add_device(reg_t addr, std::shared_ptr<abstract_device_t> dev) {
   bus.add_device(addr, dev.get());
   devices.push_back(dev);
@@ -355,23 +422,46 @@ void sim_t::configure_log(bool enable_log, bool enable_commitlog)
     proc->enable_log_commits();
   }
 }
+/*code ext beg*/
+void sim_t::configure_log(bool enable_log, bool enable_commitlog, bool enable_commitlog_stant)
+{
+  log = enable_log;
 
+  if (enable_commitlog) {
+    for (processor_t *proc : procs) {
+      proc->enable_log_commits();
+    }
+  }
+
+  if (enable_commitlog_stant) {
+    for (processor_t *proc : procs) {
+      proc->enable_log_commits_stant();
+    }
+  }
+}
+/*code ext end*/
 void sim_t::set_procs_debug(bool value)
 {
   for (size_t i=0; i< procs.size(); i++)
     procs[i]->set_debug(value);
 }
 
+static bool paddr_ok(reg_t addr)
+{
+  static_assert(MAX_PADDR_BITS == 8 * sizeof(addr));
+  return true;
+}
+
 bool sim_t::mmio_load(reg_t paddr, size_t len, uint8_t* bytes)
 {
-  if (paddr + len < paddr)
+  if (paddr + len < paddr || !paddr_ok(paddr + len - 1))
     return false;
   return bus.load(paddr, len, bytes);
 }
 
 bool sim_t::mmio_store(reg_t paddr, size_t len, const uint8_t* bytes)
 {
-  if (paddr + len < paddr)
+  if (paddr + len < paddr || !paddr_ok(paddr + len - 1))
     return false;
   return bus.store(paddr, len, bytes);
 }
@@ -379,9 +469,10 @@ bool sim_t::mmio_store(reg_t paddr, size_t len, const uint8_t* bytes)
 void sim_t::set_rom()
 {
   const int reset_vec_size = 8;
-
-  reg_t start_pc = cfg->start_pc.value_or(get_entry_point());
-
+  // rivai beg
+  //reg_t start_pc = cfg->start_pc.value_or(get_entry_point());
+  reg_t start_pc = get_entry_point();
+  // rivai end
   uint32_t reset_vec[reset_vec_size] = {
     0x297,                                      // auipc  t0,0x0
     0x28593 + (reset_vec_size * 4 << 20),       // addi   a1, t0, &dtb
@@ -422,20 +513,12 @@ void sim_t::set_rom()
 }
 
 char* sim_t::addr_to_mem(reg_t paddr) {
-  auto page_offset = paddr % PGSIZE;
-  auto page_addr = paddr - page_offset;
-
-  if (auto it = addr_to_mem_cache.find(page_addr); it != addr_to_mem_cache.end())
-    return it->second + page_offset;
-
-  auto desc = bus.find_device(page_addr, PGSIZE);
-  if (auto mem = dynamic_cast<abstract_mem_t*>(desc.second)) {
-    auto res = mem->contents(page_addr - desc.first);
-    addr_to_mem_cache.insert({page_addr, res});
-    return res + page_offset;
-  }
-
-  return nullptr;
+  if (!paddr_ok(paddr))
+    return NULL;
+  auto desc = bus.find_device(paddr >> PGSHIFT << PGSHIFT, PGSIZE);
+  if (auto mem = dynamic_cast<abstract_mem_t*>(desc.second))
+    return mem->contents(paddr - desc.first);
+  return NULL;
 }
 
 const char* sim_t::get_symbol(uint64_t paddr)
@@ -469,7 +552,7 @@ void sim_t::idle()
       }
       *instruction_limit -= INTERLEAVE;
     }
-    step(INTERLEAVE);
+    step(1); /*code ext: Always step 1*/
   }
 
   if (remote_bitbang)
@@ -500,3 +583,14 @@ void sim_t::proc_reset(unsigned id)
 {
   debug_module.proc_reset(id);
 }
+
+// code extension beg
+void sim_t::enable_specify_proc(bool val) { g_easy_args.specify_proc = val; }
+
+proc_err_t sim_t::proc_err(size_t id) const {
+  if (id < multi_proc_data.proc_errs.size()) {
+    return multi_proc_data.proc_errs[id];
+  }
+  return NO_ERR;
+}
+// code extension end

@@ -1,0 +1,143 @@
+
+#include <test_utils.h>
+
+// page tables
+static pte_t L2_pagetable_hgatp[5] __attribute__((aligned(PAGE_SIZE*4)));
+static pte_t L1_pagetable_hgatp[5] __attribute__((aligned(PAGE_SIZE)));
+static pte_t L0_pagetable_hgatp[5] __attribute__((aligned(PAGE_SIZE)));
+
+static pte_t L2_pagetable_vsatp[5] __attribute__((aligned(PAGE_SIZE)));
+static pte_t L1_pagetable_vsatp[5] __attribute__((aligned(PAGE_SIZE)));
+static pte_t L0_pagetable_vsatp[5] __attribute__((aligned(PAGE_SIZE)));
+
+bool __attribute__((weak)) sv39_kilopage_two_stage(){
+    TEST_START();
+
+    const reg_t page_addr_lower = 0xC0000000;
+    const reg_t page_addr_upper = 0xC0001000;
+
+    reg_t read_data_lower;
+    reg_t read_data_upper;
+
+    TEST_COMPARE("check that currunt mode is S", MODE_S, current_mode);                                                   
+
+
+
+    /*
+     *   Check tow-stage translation with vsatp 
+     */
+    
+    // setup page table, to pages point to the same physical address
+    L2_pagetable_hgatp[2] = PTE_V | PTE_U | PTE_RWX | PTE_AD | 0x80000000 >> 2;
+    L2_pagetable_hgatp[3] = PTE_V |                            ( (reg_t)L1_pagetable_hgatp ) >> 2;
+
+    L1_pagetable_hgatp[0] = PTE_V |                            ( (reg_t)L0_pagetable_hgatp ) >> 2;
+
+    L0_pagetable_hgatp[0] = PTE_V | PTE_U | PTE_RWX | PTE_AD | page_addr_lower >> 2;
+    L0_pagetable_hgatp[1] = PTE_V | PTE_U | PTE_RWX | PTE_AD | page_addr_upper >> 2;
+    asm volatile ("hfence.gvma \n\t");
+
+    L2_pagetable_vsatp[2] = PTE_V |  PTE_RWX | PTE_AD | 0x80000000 >> 2;
+    L2_pagetable_vsatp[3] = PTE_V |                     ( (reg_t)L1_pagetable_vsatp ) >> 2;
+
+    L1_pagetable_vsatp[0] = PTE_V |                     ( (reg_t)L0_pagetable_vsatp ) >> 2;
+
+    L0_pagetable_vsatp[0] = PTE_V |  PTE_RWX | PTE_AD | page_addr_lower >> 2;
+    L0_pagetable_vsatp[1] = PTE_V |  PTE_RWX | PTE_AD | page_addr_lower >> 2;
+    asm volatile ("hfence.vvma \n\t");
+    
+    // enable address translation
+    CSRW( hgatp, (SATP_SV39<< SATP_MODE_OFF |  get_ppn((reg_t)L2_pagetable_hgatp)) );
+    CSRW( vsatp, (SATP_SV39<< SATP_MODE_OFF |  get_ppn((reg_t)L2_pagetable_vsatp)) );
+
+
+    set_virtial_mode_host(ON);
+
+    // set data by lower page, then read and check by upper
+    read_data_lower = 0xAAAA;
+    *( (reg_t*)page_addr_lower ) = read_data_lower;
+
+    read_data_upper = *( (reg_t*)page_addr_upper );
+    TEST_COMPARE("Check vsatp. Write by lower page, read by upper", read_data_lower, read_data_upper);
+
+
+    // set data by upper page, then read and check by lower
+    read_data_upper = 0x5555;
+    *( (reg_t*)page_addr_upper ) = read_data_upper;
+
+    read_data_lower = *( (reg_t*)page_addr_lower );
+    TEST_COMPARE("Check vsatp. Write by upper page, read by lower", read_data_lower, read_data_upper);
+
+    set_virtial_mode_host(OFF);
+
+    // disable address translation
+    CSRW(hgatp, 0);
+    CSRW(vsatp, 0);
+
+
+
+    /*
+     *   Check tow-stage translation with hgatp 
+     */
+    
+    // setup page table, to pages point to the same physical address
+    L2_pagetable_hgatp[2] = PTE_V | PTE_U | PTE_RWX | PTE_AD | 0x80000000 >> 2;
+    L2_pagetable_hgatp[3] = PTE_V |                            ( (reg_t)L1_pagetable_hgatp ) >> 2;
+
+    L1_pagetable_hgatp[0] = PTE_V |                            ( (reg_t)L0_pagetable_hgatp ) >> 2;
+
+    L0_pagetable_hgatp[0] = PTE_V | PTE_U | PTE_RWX | PTE_AD | page_addr_lower >> 2;
+    L0_pagetable_hgatp[1] = PTE_V | PTE_U | PTE_RWX | PTE_AD | page_addr_lower >> 2;
+    asm volatile ("hfence.gvma \n\t");
+
+    L2_pagetable_vsatp[2] = PTE_V |  PTE_RWX | PTE_AD | 0x80000000 >> 2;
+    L2_pagetable_vsatp[3] = PTE_V |                     ( (reg_t)L1_pagetable_vsatp ) >> 2;
+
+    L1_pagetable_vsatp[0] = PTE_V |                     ( (reg_t)L0_pagetable_vsatp ) >> 2;
+
+    L0_pagetable_vsatp[0] = PTE_V |  PTE_RWX | PTE_AD | page_addr_lower >> 2;
+    L0_pagetable_vsatp[1] = PTE_V |  PTE_RWX | PTE_AD | page_addr_upper >> 2;
+    asm volatile ("hfence.vvma \n\t");
+    
+    // enable address translation
+    CSRW( hgatp, (SATP_SV39<< SATP_MODE_OFF |  get_ppn((reg_t)L2_pagetable_hgatp)) );
+    CSRW( vsatp, (SATP_SV39<< SATP_MODE_OFF |  get_ppn((reg_t)L2_pagetable_vsatp)) );
+
+
+    set_virtial_mode_host(ON);
+
+    // set data by lower page, then read and check by upper
+    read_data_lower = 0xAAAA;
+    *( (reg_t*)page_addr_lower ) = read_data_lower;
+
+    read_data_upper = *( (reg_t*)page_addr_upper );
+    TEST_COMPARE("Check hgatp. Write by lower page, read by upper", read_data_lower, read_data_upper);
+
+
+    // set data by upper page, then read and check by lower
+    read_data_upper = 0x5555;
+    *( (reg_t*)page_addr_upper ) = read_data_upper;
+
+    read_data_lower = *( (reg_t*)page_addr_lower );
+    TEST_COMPARE("Check hgatp. Write by upper page, read by lower", read_data_lower, read_data_upper);
+
+    set_virtial_mode_host(OFF);
+
+    // disable address translation
+    CSRW(hgatp, 0);
+    CSRW(vsatp, 0);
+
+
+    // clear tables
+    for (int i = 0; i < 5; i++) {
+        L2_pagetable_hgatp[i] = 0UL;
+        L1_pagetable_hgatp[i] = 0UL;
+        L0_pagetable_hgatp[i] = 0UL;
+
+        L2_pagetable_vsatp[i] = 0UL;
+        L1_pagetable_vsatp[i] = 0UL;
+        L0_pagetable_vsatp[i] = 0UL;
+    }
+
+    TEST_END();
+}

@@ -36,7 +36,7 @@ processor_t::processor_t(const char* isa_str, const char* priv_str,
                          FILE* log_file, std::ostream& sout_)
 : debug(false), halt_request(HR_NONE), isa(isa_str, priv_str), cfg(cfg),
   sim(sim), id(id), xlen(isa.get_max_xlen()),
-  histogram_enabled(false), log_commits_enabled(false),
+  histogram_enabled(false), log_commits_enabled(false), log_commits_stant_enabled(false),
   log_file(log_file), sout_(sout_.rdbuf()), halt_on_reset(halt_on_reset),
   in_wfi(false), check_triggers_icount(false),
   impl_table(256, false), extension_enable_table(isa.get_extension_table()),
@@ -62,22 +62,27 @@ processor_t::processor_t(const char* isa_str, const char* priv_str,
   VU.vlenb = isa.get_vlen() / 8;
   VU.vstart_alu = 0;
 
+  register_base_instructions();
   mmu = new mmu_t(sim, cfg->endianness, this, cfg->cache_blocksz);
+
+  disassembler = new disassembler_t(&isa);
+  for (auto e : isa.get_extensions())
+    register_extension(find_extension(e.c_str())());
 
   set_pmp_granularity(cfg->pmpgranularity);
   set_pmp_num(cfg->pmpregions);
 
-  set_max_vaddr_bits(0);
+  if (isa.get_max_xlen() == 32)
+    set_mmu_capability(IMPL_MMU_SV32);
+  else if (isa.get_max_xlen() == 64)
+    set_mmu_capability(IMPL_MMU_SV57);
+
   set_impl(IMPL_MMU_ASID, true);
   set_impl(IMPL_MMU_VMID, true);
 
   reset();
 
-  register_base_instructions();
-
-  disassembler = new disassembler_t(&isa);
-  for (auto e : isa.get_extensions())
-    register_extension(find_extension(e.c_str())());
+  std::cout << "get_log_commits_enabled: " << get_log_commits_enabled() << ", is_fast_log_mem: " << is_fast_log_mem() << std::endl;
 }
 
 processor_t::~processor_t()
@@ -97,9 +102,12 @@ processor_t::~processor_t()
   delete disassembler;
 }
 
+int state_t::max_pmp = 64; /* code ext: initial max_pmp here instead. */
 void state_t::reset(processor_t* const proc, reg_t max_isa)
 {
-  pc = DEFAULT_RSTVEC;
+// rivai beg
+  pc = proc->get_cfg().start_pc.value_or((reg_t)PROC_START_PC_ADDR);;
+// rivai end
   XPR.reset();
   FPR.reset();
 
@@ -143,7 +151,11 @@ void processor_t::enable_log_commits()
 {
   log_commits_enabled = true;
   mmu->flush_tlb(); // the TLB caches this setting
-  build_opcode_map();
+}
+
+void processor_t::enable_log_commits_stant()
+{
+  log_commits_stant_enabled = true;
 }
 
 void processor_t::reset()
@@ -154,12 +166,16 @@ void processor_t::reset()
     VU.reset();
   in_wfi = false;
 
+  /* code ext: Comment out the code below for cosim. */
+  /*
   if (n_pmp > 0) {
     // For backwards compatibility with software that is unaware of PMP,
     // initialize PMP to permit unprivileged access to all of memory.
     put_csr(CSR_PMPADDR0, ~reg_t(0));
     put_csr(CSR_PMPCFG0, PMP_R | PMP_W | PMP_X | PMP_NAPOT);
   }
+  */
+  /* code ext end */
 
   for (auto e : custom_extensions) { // reset any extensions
     for (auto &csr: e.second->get_csrs(*this))
@@ -213,26 +229,31 @@ void processor_t::set_pmp_granularity(reg_t gran)
   lg_pmp_granularity = ctz(gran);
 }
 
-void processor_t::set_max_vaddr_bits(unsigned n)
+void processor_t::set_mmu_capability(int cap)
 {
-  switch (n) {
-    case 0:
+  switch (cap) {
+    case IMPL_MMU_SV32:
+      set_impl(IMPL_MMU_SV32, true);
+      set_impl(IMPL_MMU, true);
       break;
-    case 32:
-      if (isa.get_max_xlen() != 32)
-        abort();
-      break;
-    case 39:
-    case 48:
-    case 57:
-      if (isa.get_max_xlen() != 64)
-        abort();
+    case IMPL_MMU_SV57:
+      set_impl(IMPL_MMU_SV57, true);
+      [[fallthrough]];
+    case IMPL_MMU_SV48:
+      set_impl(IMPL_MMU_SV48, true);
+      [[fallthrough]];
+    case IMPL_MMU_SV39:
+      set_impl(IMPL_MMU_SV39, true);
+      set_impl(IMPL_MMU, true);
       break;
     default:
-      abort();
+      set_impl(IMPL_MMU_SV32, false);
+      set_impl(IMPL_MMU_SV39, false);
+      set_impl(IMPL_MMU_SV48, false);
+      set_impl(IMPL_MMU_SV57, false);
+      set_impl(IMPL_MMU, false);
+      break;
   }
-
-  max_vaddr_bits = n;
 }
 
 reg_t processor_t::select_an_interrupt_with_default_priority(reg_t enabled_interrupts) const
@@ -265,20 +286,40 @@ reg_t processor_t::select_an_interrupt_with_default_priority(reg_t enabled_inter
   return enabled_interrupts;
 }
 
+bool processor_t::is_handled_in_vs()
+{
+  reg_t pending_interrupts = state.mip->read() & state.mie->read();
+
+  const reg_t s_pending_interrupts = state.nonvirtual_sip->read() & state.nonvirtual_sie->read();
+  const reg_t vstopi = state.vstopi->read();
+  const reg_t vs_pending_interrupt = vstopi ? (reg_t(1) << get_field(vstopi, MTOPI_IID)) : 0; // SSIP -> VSSIP, etc
+
+  // M-ints have higher priority over HS-ints and VS-ints
+  const reg_t mie = get_field(state.mstatus->read(), MSTATUS_MIE);
+  const reg_t m_enabled = state.prv < PRV_M || (state.prv == PRV_M && mie);
+  reg_t enabled_interrupts = pending_interrupts & ~state.mideleg->read() & -m_enabled;
+  if (enabled_interrupts == 0) {
+    // HS-ints have higher priority over VS-ints
+    const reg_t deleg_to_hs = state.mideleg->read() & ~state.hideleg->read();
+    const reg_t sie = get_field(state.sstatus->read(), MSTATUS_SIE);
+    const reg_t hs_enabled = state.v || state.prv < PRV_S || (state.prv == PRV_S && sie);
+    enabled_interrupts = ((pending_interrupts & deleg_to_hs) | (s_pending_interrupts & ~state.hideleg->read())) & -hs_enabled;
+    if (state.v && enabled_interrupts == 0) {
+      // VS-ints have least priority and can only be taken with virt enabled
+      const reg_t vs_enabled = state.prv < PRV_S || (state.prv == PRV_S && sie);
+      enabled_interrupts = vs_pending_interrupt & -vs_enabled;
+      if (enabled_interrupts)
+        return true;
+    }
+  }
+  return false;
+}
+
 void processor_t::take_interrupt(reg_t pending_interrupts)
 {
-  reg_t s_pending_interrupts = 0;
-  reg_t vstopi = 0;
-  reg_t vs_pending_interrupt = 0;
-
-  if (extension_enabled_const(EXT_SSAIA)) {
-    s_pending_interrupts = state.nonvirtual_sip->read() & state.nonvirtual_sie->read();
-    vstopi = state.vstopi->read();
-    // Legacy VS interrupts (VSEIP/VSTIP/VSSIP) come in through pending_interrupts but are shifted
-    // down 1 in vstopi. AIA-extended and VTI are not shifted. Clear S bits (VS shifted down by 1).
-    vs_pending_interrupt = vstopi ? (reg_t(1) << get_field(vstopi, MTOPI_IID)) : 0;
-    vs_pending_interrupt &= ~MIP_S_MASK;
-  }
+  const reg_t s_pending_interrupts = state.nonvirtual_sip->read() & state.nonvirtual_sie->read();
+  const reg_t vstopi = state.vstopi->read();
+  const reg_t vs_pending_interrupt = vstopi ? (reg_t(1) << get_field(vstopi, MTOPI_IID)) : 0;
 
   // Do nothing if no pending interrupts
   if (!pending_interrupts && !s_pending_interrupts && !vs_pending_interrupt) {
@@ -300,15 +341,15 @@ void processor_t::take_interrupt(reg_t pending_interrupts)
     enabled_interrupts = ((pending_interrupts & deleg_to_hs) | (s_pending_interrupts & ~state.hideleg->read())) & -hs_enabled;
     if (state.v && enabled_interrupts == 0) {
       // VS-ints have least priority and can only be taken with virt enabled
-      const reg_t deleg_to_vs = state.hideleg->read();
       const reg_t vs_enabled = state.prv < PRV_S || (state.prv == PRV_S && sie);
-      enabled_interrupts = ((pending_interrupts & deleg_to_vs) | vs_pending_interrupt) & -vs_enabled;
+      enabled_interrupts = vs_pending_interrupt & -vs_enabled;
     }
   }
 
   const bool nmie = !(state.mnstatus && !get_field(state.mnstatus->read(), MNSTATUS_NMIE));
   if (!state.debug_mode && nmie && enabled_interrupts) {
     reg_t selected_interrupt = select_an_interrupt_with_default_priority(enabled_interrupts);
+
     if (check_triggers_icount) TM.detect_icount_match();
     throw trap_t(((reg_t)1 << (isa.get_max_xlen() - 1)) | ctz(selected_interrupt));
   }
@@ -382,6 +423,14 @@ void processor_t::debug_output_log(std::stringstream *s)
 
 void processor_t::take_trap(trap_t& t, reg_t epc)
 {
+  /* code ext: Record in_trap state. */
+  curr_info.in_trap = true;
+  curr_info.epc = epc;
+  curr_info.cause = t.cause();
+  curr_info.tval  = t.get_tval();
+  curr_info.has_tval2 = t.has_tval2();
+  curr_info.tval2 = t.get_tval2();
+  /* code ext end */
   unsigned max_xlen = isa.get_max_xlen();
 
   if (debug) {
@@ -431,17 +480,9 @@ void processor_t::take_trap(trap_t& t, reg_t epc)
     if (supv_double_trap)
       vsdeleg = hsdeleg = 0;
   }
-  bool vti = false;
-  if (extension_enabled_const(EXT_SSAIA)) {
-    const reg_t hvictl = state.csrmap[CSR_HVICTL]->read();
-    const reg_t iid = get_field(hvictl, HVICTL_IID);
-    // It is possible that hvictl is injecting VSEIP (10) and hvictl.DPR is causing mip.VSEIP to be picked over VTI.
-    // Check vstopi == hvictl.iid
-    vti = (hvictl & HVICTL_VTI) && iid != IRQ_S_EXT && iid == bit && get_field(state.vstopi->read(), MTOPI_IID) == iid;
-  }
-  if ((state.prv <= PRV_S && bit < max_xlen && ((vsdeleg >> bit) & 1)) || vti) {
+  if ((state.prv <= PRV_S && bit < max_xlen && ((vsdeleg >> bit) & 1)) || (state.v && interrupt && is_handled_in_vs())) {
     // Handle the trap in VS-mode
-    const reg_t adjusted_cause = interrupt && bit <= IRQ_VS_EXT && !vti ? bit - 1 : bit;  // VSSIP -> SSIP, etc;
+    const reg_t adjusted_cause = bit;
     reg_t vector = (state.vstvec->read() & 1) && interrupt ? 4 * adjusted_cause : 0;
     state.pc = (state.vstvec->read() & ~(reg_t)1) + vector;
     state.vscause->write(adjusted_cause | (interrupt ? interrupt_bit : 0));
@@ -514,6 +555,10 @@ void processor_t::take_trap(trap_t& t, reg_t epc)
     state.mtval2->write(supv_double_trap ? t.cause() : t.get_tval2());
     state.mtinst->write(t.get_tinst());
 
+    /* code ext: Record in_trap state. */
+    curr_info.cause = supv_double_trap ? CAUSE_DOUBLE_TRAP : t.cause();
+    /* code ext end */
+
     s = set_field(s, MSTATUS_MPIE, get_field(s, MSTATUS_MIE));
     s = set_field(s, MSTATUS_MPP, state.prv);
     s = set_field(s, MSTATUS_MIE, 0);
@@ -565,14 +610,6 @@ void processor_t::check_if_lpad_required()
   }
 }
 
-reg_t processor_t::set_lpad_expected(reg_t pc)
-{
-  auto p = this;
-  if (ZICFILP_xLPE(state.v, state.prv))
-    state.elp = elp_t::LP_EXPECTED;
-  return pc;
-}
-
 void processor_t::disasm(insn_t insn)
 {
   uint64_t bits = insn.bits();
@@ -608,6 +645,13 @@ void processor_t::disasm(insn_t insn)
   }
 }
 
+int processor_t::paddr_bits()
+{
+  unsigned max_xlen = isa.get_max_xlen();
+  assert(xlen == max_xlen);
+  return max_xlen == 64 ? 50 : 34;
+}
+
 void processor_t::put_csr(int which, reg_t val)
 {
   val = zext_xlen(val);
@@ -623,15 +667,48 @@ void processor_t::put_csr(int which, reg_t val)
 // side effects on reads.
 reg_t processor_t::get_csr(int which, insn_t insn, bool write, bool peek)
 {
+  auto temp_search = temp_csr_map.find(which);
+  if (temp_search != temp_csr_map.end()) 
+  {
+    reg_t csr_value = temp_search->second;
+    return csr_value;
+  }
+
   auto search = state.csrmap.find(which);
   if (search != state.csrmap.end()) {
     if (!peek)
       search->second->verify_permissions(insn, write);
-    return search->second->read();
+    reg_t csr_value = search->second->read();
+    temp_csr_map[which] = csr_value;
+    return csr_value;
   }
   // If we get here, the CSR doesn't exist.  Unimplemented CSRs always throw
   // illegal-instruction exceptions, not virtual-instruction exceptions.
+  printf("csr invalid: %x\n", which);
   throw trap_illegal_instruction(insn.bits());
+}
+
+
+reg_t processor_t::get_csr(int which) 
+{ 
+  auto temp_search = temp_csr_map.find(which);
+  if (temp_search != temp_csr_map.end()) 
+  {
+    reg_t csr_value = temp_search->second;
+    return csr_value;
+  }
+
+  auto search = state.csrmap.find(which);
+  if (search != state.csrmap.end()) {
+    // search->second->verify_permissions(0, false);
+    reg_t csr_value = search->second->read();
+    temp_csr_map[which] = csr_value;
+    return csr_value;
+  }
+  // If we get here, the CSR doesn't exist.  Unimplemented CSRs always throw
+  // illegal-instruction exceptions, not virtual-instruction exceptions.
+  printf("csr invalid: %x\n", which);
+  return 0;
 }
 
 const insn_desc_t insn_desc_t::illegal_instruction = {
@@ -648,55 +725,46 @@ reg_t illegal_instruction(processor_t UNUSED *p, insn_t insn, reg_t UNUSED pc)
   throw trap_illegal_instruction(insn.bits() & 0xffffffffULL);
 }
 
-reg_t processor_t::throw_instruction_address_misaligned(reg_t pc)
-{
-  throw trap_instruction_address_misaligned(state.v, pc, 0, 0);
-}
-
 insn_func_t processor_t::decode_insn(insn_t insn)
 {
-  const auto& pool = opcode_map[insn.bits() % std::size(opcode_map)];
+  // look up opcode in hash table
+  size_t idx = insn.bits() % OPCODE_CACHE_SIZE;
+  auto [hit, desc] = opcode_cache[idx].lookup(insn.bits());
 
-  for (auto p = pool.begin(); ; ++p) {
-    if ((insn.bits() & p->mask) == p->match) {
-      return p->func;
+  bool rve = extension_enabled('E');
+
+  if (unlikely(!hit)) {
+    // fall back to linear search
+    auto matching = [insn_bits = insn.bits()](const insn_desc_t &d) {
+      return (insn_bits & d.mask) == d.match;
+    };
+    auto p = std::find_if(custom_instructions.begin(),
+                          custom_instructions.end(), matching);
+    if (p == custom_instructions.end()) {
+      p = std::find_if(instructions.begin(), instructions.end(), matching);
+      assert(p != instructions.end());
     }
+    desc = &*p;
+    opcode_cache[idx].replace(insn.bits(), desc);
   }
+
+  return desc->func(xlen, rve, log_commits_enabled);
 }
 
-void processor_t::register_insn(insn_desc_t desc, std::vector<insn_desc_t>& pool) {
+void processor_t::register_insn(insn_desc_t desc, bool is_custom) {
   assert(desc.fast_rv32i && desc.fast_rv64i && desc.fast_rv32e && desc.fast_rv64e &&
          desc.logged_rv32i && desc.logged_rv64i && desc.logged_rv32e && desc.logged_rv64e);
 
-  pool.push_back(desc);
+  if (is_custom)
+    custom_instructions.push_back(desc);
+  else
+    instructions.push_back(desc);
 }
 
 void processor_t::build_opcode_map()
 {
-  bool rve = extension_enabled('E');
-  bool zca = extension_enabled(EXT_ZCA);
-  const size_t N = std::size(opcode_map);
-
-  auto build_one = [&](const insn_desc_t& desc) {
-    auto func = desc.func(xlen, rve, log_commits_enabled);
-    if (!zca && insn_length(desc.match) % 4)
-      func = &::illegal_instruction;
-
-    auto stride = std::min(N, size_t(1) << ctz(~desc.mask));
-    for (size_t i = desc.match & (stride - 1); i < N; i += stride) {
-      if ((desc.match % N) == (i & desc.mask))
-        opcode_map[i].push_back({desc.match, desc.mask, func});
-    }
-  };
-
-  for (auto& p : opcode_map)
-    p.clear();
-
-  for (auto& d : custom_instructions)
-    build_one(d);
-
-  for (auto& d : instructions)
-    build_one(d);
+  for (size_t i = 0; i < OPCODE_CACHE_SIZE; i++)
+    opcode_cache[i].reset();
 }
 
 void processor_t::register_extension(extension_t *x) {
@@ -711,6 +779,9 @@ void processor_t::register_extension(extension_t *x) {
     fprintf(stderr, "extensions must have unique names (got two named \"%s\"!)\n", x->name());
     abort();
   }
+  /*code ext*/
+  for (auto &csr: x->get_csrs(*this))
+    state.add_csr(csr->address, csr);
 }
 
 void processor_t::register_base_instructions()
@@ -834,3 +905,10 @@ void processor_t::trigger_updated(const std::vector<triggers::trigger_t *> &trig
     }
   }
 }
+/*code ext beg*/
+bool g_usum_as_osum = false;
+bool& usum_as_osum()
+{
+  return g_usum_as_osum;
+}
+/*code ext end*/

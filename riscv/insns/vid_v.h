@@ -2,12 +2,14 @@
 require(P.VU.vsew >= e8 && P.VU.vsew <= e64);
 require_vector(true);
 reg_t sew = P.VU.vsew;
+reg_t rs2_num = insn.rs2();
 reg_t rd_num = insn.rd();
 require_align(rd_num, P.VU.vflmul);
 require_vm;
 
 for (reg_t i = P.VU.vstart->read() ; i < P.VU.vl->read(); ++i) {
-  VI_LOOP_ELEMENT_SKIP();
+  // VI_LOOP_ELEMENT_SKIP();
+  SE_VI_LOOP_ELEMENT_SKIP({}, V_HANDLE_MASK(VEC_COMMON, VI_PARAMS));
 
   switch (sew) {
   case e8:
@@ -25,4 +27,5 @@ for (reg_t i = P.VU.vstart->read() ; i < P.VU.vl->read(); ++i) {
   }
 }
 
-VECTOR_END;
+V_HANDLE_TAIL(VEC_COMMON, VI_PARAMS)
+P.VU.vstart->write(0);

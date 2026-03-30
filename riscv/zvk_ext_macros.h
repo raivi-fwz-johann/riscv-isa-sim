@@ -13,14 +13,6 @@
 // Predicate Macros
 //
 
-// Ensures that the ZVKB extension (vector crypto bitmanip subset) is present,
-// and the vector unit is enabled and in a valid state.
-#define require_zvkb \
-  do { \
-    require_vector(true); \
-    require_extension(EXT_ZVKB); \
-  } while (0)
-
 // Ensures that the ZVBB extension (vector crypto bitmanip) is present,
 // and the vector unit is enabled and in a valid state.
 #define require_zvbb \
@@ -169,6 +161,26 @@
     /* 'vl' must be a multiple of EGS */ \
     const reg_t vl = P.VU.vl->read(); \
     require(vl % 4 == 0); \
+  } while (0)
+
+#define require_element_groups_64x2 \
+  do { \
+    /* 'vstart' must be a multiple of EGS */ \
+    const reg_t vstart = P.VU.vstart->read(); \
+    require(vstart % 2 == 0); \
+    /* 'vl' must be a multiple of EGS */ \
+    const reg_t vl = P.VU.vl->read(); \
+    require(vl % 2 == 0); \
+  } while (0)
+
+#define require_element_groups_64x8 \
+  do { \
+    /* 'vstart' must be a multiple of EGS */ \
+    const reg_t vstart = P.VU.vstart->read(); \
+    require(vstart % 8 == 0); \
+    /* 'vl' must be a multiple of EGS */ \
+    const reg_t vl = P.VU.vl->read(); \
+    require(vl % 8 == 0); \
   } while (0)
 
 //
@@ -322,7 +334,12 @@
       VV_VD_VS1_VS2_EGU32x4_PARAMS(vd_num, vs1_num, vs2_num, idx_eg); \
       EG_BODY \
     } \
-    VECTOR_END; \
+    P.VU.vstart->write(0); \
+    reg_t rs1_num = insn.rs1(); \
+    reg_t rs2_num = insn.rs2(); \
+    reg_t rd_num = insn.rd(); \
+    reg_t sew = P.VU.vsew; \
+    V_HANDLE_TAIL(VEC_COMMON, VV_PARAMS) \
   } while (0)
 
 // Processes all 32b*8 element groups available in the vector register
@@ -377,7 +394,12 @@
       VV_VD_VS1_VS2_EGU32x8_PARAMS(vd_num, vs1_num, vs2_num, idx_eg); \
       EG_BODY \
     } \
-    VECTOR_END; \
+    P.VU.vstart->write(0); \
+    reg_t rs1_num = insn.rs1(); \
+    reg_t rs2_num = insn.rs2(); \
+    reg_t rd_num = insn.rd(); \
+    reg_t sew = P.VU.vsew; \
+    V_HANDLE_TAIL(VEC_COMMON, VV_PARAMS) \
   } while (0)
 
 // Processes all 32b*4 element groups available in the vector register
@@ -445,8 +467,11 @@
         EG_BODY \
       } \
     } \
-    VECTOR_END; \
-  } while (0)
+    P.VU.vstart->write(0); \
+    reg_t rd_num = insn.rd(); \
+    reg_t sew = P.VU.vsew; \
+    V_HANDLE_TAIL(VEC_COMMON, SE_GET_VD) \
+  } while (0) \
 
 // Processes all 32b*4 element groups available in the vector register
 // operands vd and vs2.  This interprets the vectors as containing
@@ -513,8 +538,11 @@
         EG_BODY \
       } \
     } \
-    VECTOR_END; \
-  } while (0)
+    P.VU.vstart->write(0); \
+    reg_t rd_num = insn.rd(); \
+    reg_t sew = P.VU.vsew; \
+    V_HANDLE_TAIL(VEC_COMMON, SE_GET_VD) \
+  } while (0) \
 
 // Processes all 32b*4 element groups available in the vector registers
 // vd, vs2.  This interprets the vectors as containing element groups
@@ -560,8 +588,11 @@
       VV_VD_VS2_EGU32x4_PARAMS(vd_num, vs2_num, idx_eg); \
       EG_BODY \
     } \
-    VECTOR_END; \
-  } while (0)
+    P.VU.vstart->write(0); \
+    reg_t rd_num = insn.rd(); \
+    reg_t sew = P.VU.vsew; \
+    V_HANDLE_TAIL(VEC_COMMON, SE_GET_VD) \
+  } while (0) \
 
 // Processes all 32b*4 element groups available in the vector registers
 // vd, vs2, given the 'zimm5' immediate.  This interprets the vectors as
@@ -616,8 +647,11 @@
         EG_BODY \
       } \
     } \
-    VECTOR_END; \
-  } while (0)
+    P.VU.vstart->write(0); \
+    reg_t rd_num = insn.rd(); \
+    reg_t sew = P.VU.vsew; \
+    V_HANDLE_TAIL(VEC_COMMON, SE_GET_VD) \
+  } while (0) \
 
 // Processes all 32b*8 element groups available in the vector registers
 // vd, vs2, given the 'zimm5' immediate.  This interprets the vectors as
@@ -672,8 +706,11 @@
         EG_BODY \
       } \
     } \
-    VECTOR_END; \
-  } while (0)
+    P.VU.vstart->write(0); \
+    reg_t rd_num = insn.rd(); \
+    reg_t sew = P.VU.vsew; \
+    V_HANDLE_TAIL(VEC_COMMON, SE_GET_VD) \
+  } while (0) \
 
 // Processes all 64b*4 element groups available in the vector registers
 // vd, vs1, and vs2.  This interprets the vectors as containing element groups
@@ -726,8 +763,11 @@
       VV_VD_VS1_VS2_EGU64x4_PARAMS(vd_num, vs1_num, vs2_num, idx_eg); \
       EG_BODY \
     } \
-    VECTOR_END; \
-  } while (0)
+    P.VU.vstart->write(0); \
+    reg_t rd_num = insn.rd(); \
+    reg_t sew = P.VU.vsew; \
+    V_HANDLE_TAIL(VEC_COMMON, SE_GET_VD) \
+  } while (0) \
 
 
 // Loop macro for widening instructions taking parameters 'vd, vs2, v1',
@@ -766,6 +806,7 @@
         } \
       } \
     VI_LOOP_END \
+    V_HANDLE_TAIL_WIDEN(VEC_COMMON, EXT_GET_VD) \
   } while (0)
 
 // Loop macro for widening instructions taking parameters 'vd, vs2, rs1',
@@ -804,6 +845,7 @@
         } \
       } \
     VI_LOOP_END \
+    V_HANDLE_TAIL_WIDEN(VEC_COMMON, EXT_GET_VD) \
   } while (0)
 
 // Loop macro for widening instructions taking parameters 'vd, vs2, zimm5',
@@ -842,6 +884,7 @@
         } \
       } \
     VI_LOOP_END \
+    V_HANDLE_TAIL_WIDEN(VEC_COMMON, EXT_GET_VD) \
   } while (0)
 
 //

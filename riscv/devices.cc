@@ -22,6 +22,7 @@ bus_t::bus_t(abstract_device_t* fallback)
 
 void bus_t::add_device(reg_t addr, abstract_device_t* dev)
 {
+  /*code ext beg
   // Allow empty devices by omitting them
   auto size = dev->size();
   if (size == 0)
@@ -42,6 +43,7 @@ void bus_t::add_device(reg_t addr, abstract_device_t* dev)
             it->first, it->first + it->second->size(), addr, addr + size);
     abort();
   }
+  code ext end*/
 
   devices[addr] = dev;
 }
@@ -94,10 +96,6 @@ std::pair<reg_t, abstract_device_t*> bus_t::find_device(reg_t addr, size_t len)
 
   // No matching device
   return std::make_pair(0, fallback);
-}
-
-const std::map<reg_t, abstract_device_t*>& bus_t::get_devices() const {
-    return devices;
 }
 
 mem_t::mem_t(reg_t size)

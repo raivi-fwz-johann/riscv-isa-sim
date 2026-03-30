@@ -14,5 +14,3 @@ for (reg_t i=P.VU.vstart->read(); i < vl; ++i) {
   }
 }
 WRITE_RD(pos);
-
-VECTOR_END;

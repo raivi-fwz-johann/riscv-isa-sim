@@ -22,7 +22,6 @@ typedef enum {
   EXT_ZCA,
   EXT_ZCB,
   EXT_ZCD,
-  EXT_ZCE,
   EXT_ZCF,
   EXT_ZCLSD,
   EXT_ZCMP,
@@ -35,13 +34,9 @@ typedef enum {
   EXT_ZKR,
   EXT_ZMMUL,
   EXT_ZVFH,
-  EXT_ZVFBFA,
   EXT_ZVFHMIN,
-  EXT_ZVFOFP4MIN,
-  EXT_ZVFOFP8MIN,
   EXT_SMEPMP,
   EXT_SMSTATEEN,
-  EXT_SMPMPMT,
   EXT_SMRNMI,
   EXT_SSCOFPMF,
   EXT_SVADU,
@@ -49,26 +44,19 @@ typedef enum {
   EXT_SVNAPOT,
   EXT_SVPBMT,
   EXT_SVINVAL,
-  EXT_SVUKTE,
-  EXT_SVRSW60T59B,
   EXT_ZDINX,
   EXT_ZFA,
   EXT_ZFBFMIN,
   EXT_ZFINX,
   EXT_ZHINX,
   EXT_ZHINXMIN,
-  EXT_ZIBI,
-  EXT_ZICCID,
   EXT_ZICBOM,
   EXT_ZICBOZ,
-  EXT_ZICCLSM,
   EXT_ZICNTR,
   EXT_ZICOND,
   EXT_ZIHPM,
   EXT_ZILSD,
-  EXT_ZVABD,
   EXT_ZVBB,
-  EXT_ZVKB,
   EXT_ZVBC,
   EXT_ZVFBFMIN,
   EXT_ZVFBFWMA,
@@ -79,16 +67,6 @@ typedef enum {
   EXT_ZVKSED,
   EXT_ZVKSH,
   EXT_ZVQDOTQ,
-  EXT_ZVQBDOT8I,
-  EXT_ZVQBDOT16I,
-  EXT_ZVFQBDOT8F,
-  EXT_ZVFWBDOT16BF,
-  EXT_ZVFBDOT32F,
-  EXT_ZVQLDOT8I,
-  EXT_ZVQLDOT16I,
-  EXT_ZVFQLDOT8F,
-  EXT_ZVFWLDOT16BF,
-  EXT_ZVZIP,
   EXT_SSTC,
   EXT_ZAAMO,
   EXT_ZALRSC,
@@ -114,10 +92,19 @@ typedef enum {
   EXT_SSNPM,
   EXT_SMAIA,
   EXT_SSAIA,
+  EXT_XKGOST,
+  EXT_XVKGOST,
+  EXT_XVCGOST,
   NUM_ISA_EXTENSIONS
 } isa_extension_t;
 
 typedef enum {
+  IMPL_MMU_SV32,
+  IMPL_MMU_SV39,
+  IMPL_MMU_SV48,
+  IMPL_MMU_SV57,
+  IMPL_MMU_SBARE,
+  IMPL_MMU,
   IMPL_MMU_VMID,
   IMPL_MMU_ASID,
 } impl_extension_t;
@@ -155,9 +142,6 @@ protected:
   std::bitset<NUM_ISA_EXTENSIONS> extension_table;
   std::string isa_string;
   std::set<std::string> extensions;
-
-private:
-  void add_extension(const std::string&, const char*);
 };
 
 #endif

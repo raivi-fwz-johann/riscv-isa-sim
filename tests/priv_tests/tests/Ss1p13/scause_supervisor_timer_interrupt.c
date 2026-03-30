@@ -1,0 +1,58 @@
+
+#include <test_utils.h>
+
+static reg_t scause_cause = 32;
+
+static void scause_shandler(){
+    excpt.triggered = true;
+    scause_cause = CSRR(scause);
+    csr_set_field(sstatus, SSTATUS_SPIE_OFF, SSTATUS_SPIE_LEN, 0);
+}
+
+bool __attribute__((weak)) scause_supervisor_timer_interrupt(){
+    TEST_START();
+
+    reg_t stie, stip, sie;
+
+    reg_t cause, interrupt_bit;
+
+    TEST_COMPARE("check that currunt mode is S", MODE_S, current_mode);                                                   
+
+    set_shandler(scause_shandler);                                                                                                                                                                             
+
+    excpt.triggered = false;
+    excpt.for_testing = true;
+
+    csr_set_field(sstatus, SSTATUS_SIE_OFF, SSTATUS_SIE_LEN, 1);
+    sie = csr_get_field(sstatus, SSTATUS_SIE_OFF, SSTATUS_SIE_LEN);
+    TEST_COMPARE("check sstatus.sie is set", 1, sie);
+
+    csr_set_field(sip, SIP_STIP_OFF, SIP_STIP_LEN, 1);
+    stip = csr_get_field(sip, SIP_STIP_OFF, SIP_STIP_LEN);
+    TEST_COMPARE("check sip.stip is set", 1, stip);
+
+    csr_set_field(sie, SIE_STIE_OFF, SIE_STIE_LEN, 1);
+
+    asm volatile ("nop \n\t");
+    asm volatile ("nop \n\t");
+    asm volatile ("nop \n\t");
+    
+    stie = csr_get_field(sie, SIE_STIE_OFF, SIE_STIE_LEN);
+    TEST_COMPARE("check sie.stie is set", 1, stie);
+
+    cause = scause_cause & ~(1L << (XLEN_BYTES * 8 - 1));
+
+    interrupt_bit = scause_cause | (1L << (XLEN_BYTES * 8 - 1));
+    interrupt_bit >>= (XLEN_BYTES * 8 - 1);
+
+    TEST_COMPARE("check that interrupt is triggered", true, excpt.triggered);
+    TEST_COMPARE("check trap cause SUPERVISOR TIMER INTERRUPT", SIE_STIE_OFF, cause);
+    TEST_COMPARE("check scause interrupt bit is set", 1, interrupt_bit);
+
+    // clear fields
+    csr_set_field(sie, SIE_STIE_OFF, SIE_STIE_LEN, 0);
+    csr_set_field(sip, SIP_STIP_OFF, SIP_STIP_LEN, 0);
+    csr_set_field(sstatus, SSTATUS_SIE_OFF, SSTATUS_SIE_LEN, 0);
+
+    TEST_END();
+}

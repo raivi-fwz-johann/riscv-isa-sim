@@ -27,7 +27,6 @@ class bus_t : public abstract_device_t {
   void add_device(reg_t addr, abstract_device_t* dev);
 
   std::pair<reg_t, abstract_device_t*> find_device(reg_t addr, size_t len);
-  const std::map<reg_t, abstract_device_t*>& get_devices() const;
 
  private:
   std::map<reg_t, abstract_device_t*> devices;
@@ -100,6 +99,9 @@ class clint_t : public abstract_device_t {
   void tick(reg_t rtc_ticks) override;
   uint64_t get_mtimecmp(reg_t hartid) { return mtimecmp[hartid]; }
   uint64_t get_mtime() { return mtime; }
+  // code ext: Add functions to support sync mtime
+  uint64_t sync(reg_t time);
+  // code ext end
  private:
   typedef uint64_t mtime_t;
   typedef uint64_t mtimecmp_t;
@@ -160,6 +162,9 @@ class plic_t : public abstract_device_t, public abstract_interrupt_controller_t 
                      reg_t offset, uint32_t val);
 };
 
+// code ext beg
+class roi_match_t;
+// code ext end
 class ns16550_t : public abstract_device_t {
  public:
   ns16550_t(abstract_interrupt_controller_t *intctrl,
@@ -168,6 +173,9 @@ class ns16550_t : public abstract_device_t {
   bool store(reg_t addr, size_t len, const uint8_t* bytes) override;
   void tick(reg_t rtc_ticks) override;
   reg_t size() override { return NS16550_SIZE; }
+  // code ext beg
+  void set_roi_match(roi_match_t *r) { roi_match = r; }
+  // code ext end
  private:
   abstract_interrupt_controller_t *intctrl;
   uint32_t interrupt_id;
@@ -190,6 +198,10 @@ class ns16550_t : public abstract_device_t {
 
   int backoff_counter;
   static const int MAX_BACKOFF = 16;
+
+  // code ext beg
+  roi_match_t *roi_match = nullptr;
+  // code ext end
 };
 
 template<typename T>

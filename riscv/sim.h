@@ -9,14 +9,27 @@
 #include "log_file.h"
 #include "processor.h"
 #include "simif.h"
+//// RiVAI: simpoint add --YC
+#include "simpoint_module.h"
+//// RiVAI: simpoint add end --YC
 
 #include <fesvr/htif.h>
 #include <vector>
 #include <map>
-#include <unordered_map>
 #include <string>
 #include <memory>
 #include <sys/types.h>
+
+// code extension beg
+#include "tools_module.h"
+// code extension end
+
+// code extension beg
+enum proc_err_t : int8_t {
+  NO_ERR = 0,
+  WAIT_TICK = 1,
+};
+// code extension end
 
 class mmu_t;
 class remote_bitbang_t;
@@ -32,7 +45,6 @@ public:
   sim_t(const cfg_t *cfg, bool halted,
         std::vector<std::pair<reg_t, abstract_mem_t*>> mems,
         const std::vector<device_factory_sargs_t>& plugin_device_factories,
-        const bool dtb_discovery,
         const std::vector<std::string>& args,
         const debug_module_config_t &dm_config, const char *log_path,
         bool dtb_enabled, const char *dtb_file,
@@ -51,36 +63,79 @@ public:
   // If enable_log is true, an instruction trace will be generated. If
   // enable_commitlog is true, so will the commit results
   void configure_log(bool enable_log, bool enable_commitlog);
+  void configure_log(bool enable_log, bool enable_commitlog, bool enable_commitlog_stant);
 
   void set_procs_debug(bool value);
   void set_remote_bitbang(remote_bitbang_t* remote_bitbang) {
     this->remote_bitbang = remote_bitbang;
   }
-  const char* get_dts();
+  const char* get_dts() { return dts.c_str(); }
   processor_t* get_core(size_t i) { return procs.at(i); }
   abstract_interrupt_controller_t* get_intctrl() const { assert(plic.get()); return plic.get(); }
   virtual const cfg_t &get_cfg() const override { return *cfg; }
 
   virtual const std::map<size_t, processor_t*>& get_harts() const override { return harts; }
-  const bus_t& get_bus() const {  return bus;}
 
   // Callback for processors to let the simulation know they were reset.
   virtual void proc_reset(unsigned id) override;
 
-  static const size_t INTERLEAVE = 5000;
+  size_t INTERLEAVE = 1; // rivai: Inorder to pass model rob replay, INTERLEAVE=1 is needed, but then it can not run 602.gcc_s.elf. todo: find out the reason.
+  size_t REMAINDER = 0; /*code ext: record reminder when INTERLEAVE < INSNS_PER_RTC_TICK*/
   static const size_t INSNS_PER_RTC_TICK = 100; // 10 MHz clock for 1 BIPS core
   static const size_t CPU_HZ = 1000000000; // 1GHz CPU
-
+  //// RiVAI: simpoint add --YC
+  // FIXME: Putting function definition in sim.cc file will cause linking error
+  void set_simpoint_module(const simpoint_module_config_t &sm_config) {
+    uint64_t tohost_addr = 0;
+    uint64_t fromhost_addr = 0;
+    if (sm_config.snapshot_load_name) {
+      // If the emulator loads a checkpoint, try to extract the symbols needed
+      // for htif from elf, if provided
+      try {
+        std::vector<std::string> targets = get_targets();
+        std::string elf_name = targets.at(1);
+        addr_t entry = 0;
+        std::map<std::string, uint64_t> symbols =
+            load_payload(elf_name, &entry, 0);
+        if (symbols.count("tohost") && symbols.count("fromhost")) {
+          tohost_addr = symbols["tohost"];
+          fromhost_addr = symbols["fromhost"];
+          set_tohost_addr(tohost_addr);
+          set_fromhost_addr(fromhost_addr);
+        } else {
+          std::cerr << "warning: tohost and fromhost symbols not in ELF; can't "
+                       "communicate with target\n"
+                    << std::endl;
+        }
+        // Delete the target in targets, such as pk, because it has been
+        // replaced by "None" to avoid repeated loading when restoring
+        // checkpoints
+        targets.erase(targets.begin() + 1);
+        set_targets(targets);
+      } catch (const std::out_of_range &e) {
+        std::cerr << "warning: ELF is not provided, the tohost and formhost "
+                     "symbols cannot be obtained, and the htif communication "
+                     "with the target cannot be used"
+                  << std::endl;
+      }
+    }
+    simpoint_module = std::make_unique<simpoint_module_t>(
+        sm_config, this, &bus, clint.get(), get_syscall(), dtb);
+    processor_t *proc = get_core(0);
+    proc->set_simpoint_module(simpoint_module.get());
+  };
+  simpoint_module_t *get_simpoint_module() { return simpoint_module.get(); }
+  //// RiVAI: simpoint add end --YC
+void interactive_reg(const std::string& cmd, const std::vector<std::string>& args);
+virtual void idle() override;
 private:
   const cfg_t * const cfg;
   std::vector<std::pair<reg_t, abstract_mem_t*>> mems;
   std::vector<processor_t*> procs;
   std::map<size_t, processor_t*> harts;
-  std::unordered_map<reg_t, char*> addr_to_mem_cache;
   std::pair<reg_t, reg_t> initrd_range;
   std::string dts;
   std::string dtb;
-  bool dtb_discovery;
   bool dtb_enabled;
   std::vector<std::shared_ptr<abstract_device_t>> devices;
   std::shared_ptr<clint_t> clint;
@@ -95,6 +150,9 @@ private:
   socketif_t *socketif;
   std::ostream sout_; // used for socket and terminal interface
 
+  // merge from p600v2 --ZQ
+  void exit_handler();
+  // merge from p600v2 end --ZQ
   processor_t* get_core(const std::string& i);
   void step(size_t n); // step through simulation
   size_t current_step;
@@ -104,6 +162,10 @@ private:
   bool log;
   remote_bitbang_t* remote_bitbang;
   std::optional<std::function<void()>> next_interactive_action;
+
+  //// RiVAI: simpoint add --YC
+  std::unique_ptr<simpoint_module_t> simpoint_module;
+  //// RiVAI: simpoint add end --YC
 
   // If padd corresponds to memory (as opposed to an I/O device), return a
   // host pointer corresponding to paddr.
@@ -128,7 +190,6 @@ private:
   void interactive_run_noisy(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_run_silent(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_vreg(const std::string& cmd, const std::vector<std::string>& args);
-  void interactive_reg(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_freg(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_fregh(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_fregs(const std::string& cmd, const std::vector<std::string>& args);
@@ -155,7 +216,6 @@ private:
 
   // htif
   virtual void reset() override;
-  virtual void idle() override;
   virtual void read_chunk(addr_t taddr, size_t len, void* dst) override;
   virtual void write_chunk(addr_t taddr, size_t len, const void* src) override;
   virtual size_t chunk_align() override { return 8; }
@@ -167,6 +227,78 @@ public:
   // enumerate processors, which segfaults if procs hasn't been initialized
   // yet.
   debug_module_t debug_module;
+
+  // code extension beg
+public:
+  void interactive_paddr(const std::string& cmd, const std::vector<std::string>& args);
+  // interactive for cosim
+  void interactive_csr(const std::string& cmd, const std::vector<std::string>& args);
+  void interactive_tint(const std::string& cmd, const std::vector<std::string>& args);
+  // end interactive for cosim
+
+  void set_current_proc(size_t proc);
+  struct {
+    std::vector<size_t> proc_current_steps;
+    std::vector<proc_err_t> proc_errs;
+    size_t steps_sum = 0;
+  } multi_proc_data;
+
+  void enable_specify_proc(bool val);
+  proc_err_t proc_err(size_t id) const;
+  size_t nprocs() const { return procs.size(); }
+  char* sd_addr2Mem(reg_t paddr) { return addr_to_mem(paddr); }
+
+  const tools_module_t *get_tools_module() const { return tools_module.get(); }
+  state_t *get_state(size_t proc = 0) const { return procs[proc]->get_state(); }
+
+  void set_log_commits(bool val) {
+    log_commits_enabled = val;
+    for (processor_t *proc : procs) {
+      proc->set_log_commits(val);
+    }
+  }
+  bool get_log_commits_enabled() const { return log_commits_enabled; }
+  void set_fast_log_commits(bool val) {
+    is_fast_log_commits = val;
+    for (processor_t *proc : procs) {
+      proc->set_fast_log_commits(val);
+    }
+  }
+  bool get_fast_log_commits() const { return is_fast_log_commits; }
+  void set_fast_log_mem(bool val) {
+    for (processor_t *proc : procs) {
+      proc->set_fast_log_mem(val);
+    }
+  }
+
+  void set_interleave(size_t val) { INTERLEAVE = val; }
+  size_t hartid_to_idx(size_t cid) const;
+  void init_multicore_data();
+  bool is_multicore_mode() const;
+
+  size_t idle_ext(size_t n, size_t cid);
+  bool not_in_step() const;
+
+  size_t step_ext(size_t n, size_t cid);
+  size_t step_proc(size_t n, size_t cid);
+  void prepare_next_ticks();
+  void devices_tick(size_t num);
+  void devices_rtc_tick(size_t rtc_ticks);
+
+  void set_log_print(bool val);
+
+private:
+  std::unique_ptr<tools_module_t> tools_module;
+
+  std::unordered_map<size_t, size_t> hartid_to_idx_map;
+  bool log_commits_enabled = false;
+  bool is_fast_log_commits = false;
+
+  memunit_init_arg_t memunit_init_arg;
+
+  friend class sim_event_ctrl_t;
+  friend class tools_module_t;
+  // code extension end
 };
 
 extern volatile bool ctrlc_pressed;

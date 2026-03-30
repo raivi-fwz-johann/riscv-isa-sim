@@ -1,0 +1,13 @@
+patch_hdrs = \
+	ctrl_arg.h \
+	prof_module.h \
+	gprof_elf_symbol_loader.h \
+	gprof_struct_define.h \
+	endflag.h \
+	eventbase.h \
+	events.h \
+	mem_events.h \
+
+patch_srcs = \
+	prof_module.cc \
+	gprof_elf_symbol_loader.cc \

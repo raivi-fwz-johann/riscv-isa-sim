@@ -6,19 +6,49 @@ require_vm;
 
 reg_t rs1 = RS1;
 
-VI_LOOP_BASE
+VI_GENERAL_LOOP_BASE
+VI_LOOP_ELEMENT_MASK
   switch (sew) {
   case e8:
-    P.VU.elt<uint8_t>(rd_num, i, true) = rs1 >= P.VU.vlmax ? 0 : P.VU.elt<uint8_t>(rs2_num, rs1);
-    break;
-  case e16:
-    P.VU.elt<uint16_t>(rd_num, i, true) = rs1 >= P.VU.vlmax ? 0 : P.VU.elt<uint16_t>(rs2_num, rs1);
-    break;
-  case e32:
-    P.VU.elt<uint32_t>(rd_num, i, true) = rs1 >= P.VU.vlmax ? 0 : P.VU.elt<uint32_t>(rs2_num, rs1);
-    break;
-  default:
-    P.VU.elt<uint64_t>(rd_num, i, true) = rs1 >= P.VU.vlmax ? 0 : P.VU.elt<uint64_t>(rs2_num, rs1);
+  {
+    uint8_t& vd = P.VU.elt<uint8_t>(rd_num, i, true);
+    if (skip)
+    {
+      if (P.VU.vma) { vd = 0; vd = ~vd; }
+    }
+    else vd = rs1 >= P.VU.vlmax ? 0 : P.VU.elt<uint8_t>(rs2_num, rs1);
     break;
   }
-VI_LOOP_END;
+  case e16:
+  {
+    uint16_t& vd = P.VU.elt<uint16_t>(rd_num, i, true);
+    if (skip)
+    {
+      if (P.VU.vma) { vd = 0; vd = ~vd; }
+    }
+    else vd = rs1 >= P.VU.vlmax ? 0 : P.VU.elt<uint16_t>(rs2_num, rs1);
+    break;
+  }
+  case e32:
+  {
+    uint32_t& vd = P.VU.elt<uint32_t>(rd_num, i, true);
+    if (skip)
+    {
+      if (P.VU.vma) { vd = 0; vd = ~vd; }
+    }
+    else vd = rs1 >= P.VU.vlmax ? 0 : P.VU.elt<uint32_t>(rs2_num, rs1);
+    break;
+  }
+  default:
+  {
+    uint64_t& vd = P.VU.elt<uint64_t>(rd_num, i, true);
+    if (skip)
+    {
+      if (P.VU.vma) { vd = 0; vd = ~vd; }
+    }
+    else vd = rs1 >= P.VU.vlmax ? 0 : P.VU.elt<uint64_t>(rs2_num, rs1);
+    break;
+  }
+  }
+SE_VI_LOOP_END
+V_HANDLE_TAIL(VEC_COMMON, EXT_GET_VD)

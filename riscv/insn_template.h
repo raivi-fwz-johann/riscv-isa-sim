@@ -4,9 +4,10 @@
 #include "arith.h"
 #include "mmu.h"
 #include "softfloat.h"
+#include "softfloat_ops.h" /*code ext*/
 #include "internals.h"
 #include "specialize.h"
 #include "tracer.h"
-#include "v_ext_macros.h"
+#include "v_ext_macros_extension.h" // rivai
 #include "debug_defines.h"
 #include <assert.h>

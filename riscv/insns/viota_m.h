@@ -12,6 +12,7 @@ require_noover(rd_num, P.VU.vflmul, rs2_num, 1);
 
 int cnt = 0;
 for (reg_t i = 0; i < vl; ++i) {
+  VI_LOOP_ELEMENT_MASK 
   bool do_mask = P.VU.mask_elt(0, i);
 
   bool has_one = false;
@@ -21,28 +22,37 @@ for (reg_t i = 0; i < vl; ++i) {
     }
   }
 
-  // Bypass masked-off elements
-  if ((insn.v_vm() == 0) && !do_mask)
-    continue;
-
+  bool use_ori = (insn.v_vm() == 0) && !do_mask;
   switch (sew) {
-  case e8:
-    P.VU.elt<uint8_t>(rd_num, i, true) = cnt;
+  case e8: {
+    auto& vd = P.VU.elt<uint8_t>(rd_num, i, true);
+    if (skip) { if (P.VU.vma) vd = ~uint8_t(0); else continue; }
+    vd = use_ori ? P.VU.elt<uint8_t>(rd_num, i) : cnt;
     break;
-  case e16:
-    P.VU.elt<uint16_t>(rd_num, i, true) = cnt;
+  }
+  case e16: {
+    auto& vd = P.VU.elt<uint16_t>(rd_num, i, true);
+    if (skip) { if (P.VU.vma) vd = ~uint16_t(0); else continue; }
+    vd = use_ori ? P.VU.elt<uint16_t>(rd_num, i) : cnt;
     break;
-  case e32:
-    P.VU.elt<uint32_t>(rd_num, i, true) = cnt;
+  }
+  case e32: {
+    auto& vd = P.VU.elt<uint32_t>(rd_num, i, true);
+    if (skip) { if (P.VU.vma) vd = ~uint32_t(0); else continue; }
+    vd = use_ori ? P.VU.elt<uint32_t>(rd_num, i) : cnt;
     break;
-  default:
-    P.VU.elt<uint64_t>(rd_num, i, true) = cnt;
+  }
+  default: {
+    auto& vd = P.VU.elt<uint64_t>(rd_num, i, true);
+    if (skip) { if (P.VU.vma) vd = ~uint64_t(0); else continue; }
+    vd = use_ori ? P.VU.elt<uint64_t>(rd_num, i) : cnt;
     break;
+  }
   }
 
   if (has_one) {
     cnt++;
   }
 }
+V_HANDLE_TAIL(VEC_COMMON, SE_GET_VD)
 
-VECTOR_END;

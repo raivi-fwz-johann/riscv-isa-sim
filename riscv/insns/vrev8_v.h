@@ -2,7 +2,7 @@
 
 #include "zvk_ext_macros.h"
 
-require_zvkb;
+require_zvbb;
 
 VI_V_ULOOP
 ({

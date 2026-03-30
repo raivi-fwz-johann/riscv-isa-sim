@@ -271,6 +271,13 @@ int htif_t::run()
       idle();
   }
 
+  // code ext beg
+  if (host_disabled) {
+    while (!should_exit())
+      idle();
+  }
+  // code ext end
+
   while (!should_exit())
   {
     uint64_t tohost;
@@ -467,3 +474,21 @@ EMUALTOR VERILOG PLUSARGS\n\
 ", stdout);
   fputs("\n" HTIF_USAGE_OPTIONS, stdout);
 }
+
+// code ext beg
+bool htif_t::is_signal_exit() const {
+  return signal_exit;
+}
+
+bool htif_t::is_end() const {
+  return should_exit();
+}
+
+void htif_t::set_host_disabled(bool val) {
+  host_disabled = val;
+}
+
+bool htif_t::get_host_disabled() const {
+  return host_disabled;
+}
+// code ext end

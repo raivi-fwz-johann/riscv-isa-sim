@@ -7,6 +7,10 @@
 #include "sim.h"
 #include "dts.h"
 
+// code ext beg
+#include "tools_module.h"
+// code ext end
+
 #define UART_QUEUE_SIZE         64
 
 #define UART_RX                 0 /* In:  Receive buffer */
@@ -93,8 +97,8 @@ void ns16550_t::update_interrupt(void)
   uint8_t interrupts = 0;
 
   /* Handle clear rx */
-  if (fcr & UART_FCR_CLEAR_RCVR) {
-    fcr &= ~UART_FCR_CLEAR_RCVR;
+  if (lcr & UART_FCR_CLEAR_RCVR) {
+    lcr &= ~UART_FCR_CLEAR_RCVR;
     while (!rx_queue.empty()) {
       rx_queue.pop();
     }
@@ -102,8 +106,8 @@ void ns16550_t::update_interrupt(void)
   }
 
   /* Handle clear tx */
-  if (fcr & UART_FCR_CLEAR_XMIT) {
-    fcr &= ~UART_FCR_CLEAR_XMIT;
+  if (lcr & UART_FCR_CLEAR_XMIT) {
+    lcr &= ~UART_FCR_CLEAR_XMIT;
     lsr |= UART_LSR_TEMT | UART_LSR_THRE;
   }
 
@@ -161,6 +165,7 @@ void ns16550_t::tx_byte(uint8_t val)
 {
   lsr |= UART_LSR_TEMT | UART_LSR_THRE;
   canonical_terminal_t::write(val);
+  roi_match->check(val);
 }
 
 bool ns16550_t::load(reg_t addr, size_t len, uint8_t* bytes)
@@ -361,4 +366,4 @@ ns16550_t* ns16550_parse_from_fdt(const void* fdt, const sim_t* sim, reg_t* base
   }
 }
 
-REGISTER_BUILTIN_DEVICE(ns16550, ns16550_parse_from_fdt, ns16550_generate_dts)
+REGISTER_DEVICE(ns16550, ns16550_parse_from_fdt, ns16550_generate_dts)

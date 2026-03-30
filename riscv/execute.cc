@@ -61,6 +61,11 @@ static void commit_log_print_value(FILE *log_file, int width, uint64_t val)
 
 static void commit_log_print_insn(processor_t *p, reg_t pc, insn_t insn)
 {
+// rivai beg
+  if (not p->log_print_enabled) {
+    return;
+  }
+// rivai end
   FILE *log_file = p->get_log_file();
 
   auto& reg = p->get_state()->log_reg_write;
@@ -70,14 +75,21 @@ static void commit_log_print_insn(processor_t *p, reg_t pc, insn_t insn)
   int xlen = p->get_state()->last_inst_xlen;
   int flen = p->get_state()->last_inst_flen;
 
-  // print core id on all lines so it is easy to grep
-  fprintf(log_file, "core%4" PRId32 ": ", p->get_id());
+  /*code ext beg*/
+  if (p->get_log_commits_stant_enabled()) {
+    fprintf(log_file, "PC=0x%08lx", pc);
+    fprintf(log_file, ", opcode=0x%08lx", insn.bits());
+  } else {
+    // print core id on all lines so it is easy to grep
+    fprintf(log_file, "core%4" PRId32 ": ", p->get_id());
 
-  fprintf(log_file, "%1d ", priv);
-  commit_log_print_value(log_file, xlen, pc);
-  fprintf(log_file, " (");
-  commit_log_print_value(log_file, insn.length() * 8, insn.bits());
-  fprintf(log_file, ")");
+    fprintf(log_file, "%1d ", priv);
+    commit_log_print_value(log_file, xlen, pc);
+    fprintf(log_file, " (");
+    commit_log_print_value(log_file, insn.length() * 8, insn.bits());
+    fprintf(log_file, ")");
+  }
+  /*code ext end*/
   bool show_vec = false;
 
   for (auto item : reg) {
@@ -86,6 +98,9 @@ static void commit_log_print_insn(processor_t *p, reg_t pc, insn_t insn)
 
     char prefix = ' ';
     int size;
+    // rivai beg
+    size = 0;
+    // rivai end
     int rd = item.first >> 4;
     bool is_vec = false;
     bool is_vreg = false;
@@ -116,36 +131,56 @@ static void commit_log_print_insn(processor_t *p, reg_t pc, insn_t insn)
     }
 
     if (!show_vec && (is_vreg || is_vec)) {
-        fprintf(log_file, " e%ld %s%ld l%ld",
-                (long)p->VU.vsew,
-                p->VU.vflmul < 1 ? "mf" : "m",
-                p->VU.vflmul < 1 ? (long)(1 / p->VU.vflmul) : (long)p->VU.vflmul,
-                (long)p->VU.vl->read());
+        if (!p->get_log_commits_stant_enabled()) { /*code ext*/
+          fprintf(log_file, " e%ld %s%ld l%ld",
+                  (long)p->VU.vsew,
+                  p->VU.vflmul < 1 ? "mf" : "m",
+                  p->VU.vflmul < 1 ? (long)(1 / p->VU.vflmul) : (long)p->VU.vflmul,
+                  (long)p->VU.vl->read());
+        }
         show_vec = true;
     }
 
     if (!is_vec) {
-      if (prefix == 'c')
-        fprintf(log_file, " c%d_%s ", rd, csr_name(rd));
-      else
-        fprintf(log_file, " %c%-2d ", prefix, rd);
-      if (is_vreg)
-        commit_log_print_value(log_file, size, &p->VU.elt<uint8_t>(rd, 0));
-      else
-        commit_log_print_value(log_file, size, item.second.v);
+      if (!p->get_log_commits_stant_enabled()) { /*code ext*/
+        if (prefix == 'c')
+          fprintf(log_file, " c%d_%s ", rd, csr_name(rd));
+        else
+          fprintf(log_file, " %c%-2d ", prefix, rd);
+        if (is_vreg)
+          commit_log_print_value(log_file, size, &p->VU.elt<uint8_t>(rd, 0));
+        else
+          commit_log_print_value(log_file, size, item.second.v);
+      }
     }
   }
 
   for (auto item : load) {
-    fprintf(log_file, " mem ");
-    commit_log_print_value(log_file, xlen, std::get<0>(item));
+    if (p->get_log_commits_stant_enabled()) { /*code ext*/
+      fprintf(log_file, ", VA=0x%08lx", std::get<3>(item));
+    } else {
+      fprintf(log_file, " mem ");
+      commit_log_print_value(log_file, xlen, std::get<0>(item));
+// rivai beg
+      fprintf(log_file, " ");
+      commit_log_print_value(log_file, xlen, std::get<3>(item));
+// rivai end
+    }
   }
 
   for (auto item : store) {
-    fprintf(log_file, " mem ");
-    commit_log_print_value(log_file, xlen, std::get<0>(item));
-    fprintf(log_file, " ");
-    commit_log_print_value(log_file, std::get<2>(item) << 3, std::get<1>(item));
+    if (p->get_log_commits_stant_enabled()) { /*code ext*/
+      fprintf(log_file, ", VA=0x%08lx", std::get<3>(item));
+    } else {
+      fprintf(log_file, " mem ");
+      commit_log_print_value(log_file, xlen, std::get<0>(item));
+      fprintf(log_file, " ");
+      commit_log_print_value(log_file, std::get<2>(item) << 3, std::get<1>(item));
+// rivai beg
+      fprintf(log_file, " ");
+      commit_log_print_value(log_file, xlen, std::get<3>(item));
+// rivai end
+    }
   }
   fprintf(log_file, "\n");
 }
@@ -159,11 +194,20 @@ inline void processor_t::update_histogram(reg_t pc)
 // These two functions are expected to be inlined by the compiler separately in
 // the processor_t::step() loop. The logged variant is used in the slow path
 static inline reg_t execute_insn_fast(processor_t* p, reg_t pc, insn_fetch_t fetch) {
-  return fetch.func(p, fetch.insn, pc);
+  // code ext: support log commits in fast mode
+  p->curr_info.in_trap = false; /* code ext: Reset in_trap state */
+  if (p->get_fast_log_commits()) {
+    commit_log_reset(p);
+    commit_log_stash_privilege(p);
+  }
+  reg_t npc = fetch.func(p, fetch.insn, pc);
+  return npc;
+  // code ext end
 }
 static inline reg_t execute_insn_logged(processor_t* p, reg_t pc, insn_fetch_t fetch)
 {
-  if (p->get_log_commits_enabled()) {
+  p->curr_info.in_trap = false; /* code ext: Reset in_trap state */
+  if (p->get_log_commits_enabled() or p->get_fast_log_commits()/*code ext*/) {
     commit_log_reset(p);
     commit_log_stash_privilege(p);
   }
@@ -203,15 +247,16 @@ static inline reg_t execute_insn_logged(processor_t* p, reg_t pc, insn_fetch_t f
 
 bool processor_t::slow_path() const
 {
-  return debug || state.single_step != state.STEP_NONE || state.debug_mode ||
-         log_commits_enabled || histogram_enabled || in_wfi || check_triggers_icount;
+  return debug || state.single_step != state.STEP_NONE || state.debug_mode || log_commits_stant_enabled/*code ext*/ ||
+         (log_commits_enabled && !fast_log_commits/*code ext*/) || histogram_enabled || in_wfi || check_triggers_icount;
 }
 
 // fetch/decode/execute loop
 void processor_t::step(size_t n)
 {
-  mmu_t* _mmu = mmu;
-
+  temp_csr_map.clear(); 
+  
+  step_count += n; /*code ext*/
   if (!state.debug_mode) {
     if (halt_request == HR_REGULAR) {
       enter_debug_mode(DCSR_CAUSE_DEBUGINT, 0);
@@ -226,10 +271,11 @@ void processor_t::step(size_t n)
   while (n > 0) {
     size_t instret = 0;
     reg_t pc = state.pc;
+    mmu_t* _mmu = mmu;
     state.prv_changed = false;
     state.v_changed = false;
 
-    #define advance_pc() { \
+    #define advance_pc() \
       if (unlikely(invalid_pc(pc))) { \
         switch (pc) { \
           case PC_SERIALIZE_BEFORE: state.serialized = true; break; \
@@ -237,11 +283,11 @@ void processor_t::step(size_t n)
           default: abort(); \
         } \
         pc = state.pc; \
-        goto serialize; \
+        break; \
       } else { \
         state.pc = pc; \
         instret++; \
-      }}
+      }
 
     try
     {
@@ -284,6 +330,23 @@ void processor_t::step(size_t n)
           insn_fetch_t fetch = mmu->load_insn(pc);
           if (debug && !state.serialized)
             disasm(fetch.insn);
+// rivai beg
+          //// RiVAI: simpoint add --YC
+          if (this->simpoint_module) {
+            this->simpoint_module->simpoint_step(1);
+          }
+          //// RiVAI: simpoint add end --YC
+// rivai end
+          /* code ext: Record current insn_fetch */
+          // if (curr_info.vpc != pc) {
+            pre_info_pc = curr_info.vpc;
+            curr_info.vpc = pc;
+            curr_info.ppc = fetch.pc_ppn;
+            curr_info.ppc2 = fetch.pc_ppn2;
+            curr_info.bits = fetch.insn.bits();
+            curr_info.mem_trace = get_mmu()->mmu_trace;
+          // }
+          /* code ext end */
           pc = execute_insn_logged(this, pc, fetch);
           advance_pc();
 
@@ -302,21 +365,35 @@ void processor_t::step(size_t n)
       else while (instret < n)
       {
         // Main simulation loop, fast path.
-        for (auto ic_entry = _mmu->access_icache(pc); instret < n; instret++) {
-          auto fetch = ic_entry->data;
-          ic_entry = ic_entry->next;
-          auto new_pc = execute_insn_fast(this, pc, fetch);
-          if (unlikely(ic_entry->tag != new_pc)) {
-            ic_entry = &_mmu->icache[_mmu->icache_index(new_pc)];
-            _mmu->icache[_mmu->icache_index(pc)].next = ic_entry;
-            if (ic_entry->tag != new_pc) {
-              pc = new_pc;
-              advance_pc();
-              break;
-            }
+        for (auto ic_entry = _mmu->access_icache(pc); ; ) {
+// rivai beg
+          //// RiVAI: simpoint add --YC
+          if (this->simpoint_module) {
+            this->simpoint_module->simpoint_step(1);
           }
-          state.pc = pc = ic_entry->tag;
+          //// RiVAI: simpoint add end --YC
+// rivai end
+          auto fetch = ic_entry->data;
+          /* code ext: Record current insn_fetch */
+          // if (curr_info.vpc != pc) {
+            pre_info_pc = curr_info.vpc;
+            curr_info.vpc = pc;
+            curr_info.ppc = fetch.pc_ppn;
+            curr_info.ppc2 = fetch.pc_ppn2;
+            curr_info.bits = fetch.insn.bits();
+          // }
+          /* code ext end */
+          pc = execute_insn_fast(this, pc, fetch);
+          ic_entry = ic_entry->next;
+          if (unlikely(ic_entry->tag != pc))
+            break;
+          if (unlikely(instret + 1 == n))
+            break;
+          instret++;
+          state.pc = pc;
         }
+
+        advance_pc();
       }
     }
     catch(trap_t& t)
@@ -345,6 +422,9 @@ void processor_t::step(size_t n)
     }
     catch (triggers::matched_t& t)
     {
+      // rivai beg
+      n = instret;
+      // rivai end
       take_trigger_action(t.action, t.address, pc, t.gva);
     }
     catch(trap_debug_mode&)
@@ -363,11 +443,11 @@ void processor_t::step(size_t n)
       in_wfi = true;
     }
 
-serialize:
     state.minstret->bump((state.mcountinhibit->read() & MCOUNTINHIBIT_IR) ? 0 : instret);
 
     // Model a hart whose CPI is 1.
-    state.mcycle->bump((state.mcountinhibit->read() & MCOUNTINHIBIT_CY) ? 0 : instret);
+    // code ext: if use external time, no need to bump mcycle
+    state.mcycle->bump((state.mcountinhibit->read() & MCOUNTINHIBIT_CY) or get_cfg().deepctrl ? 0 : instret);
 
     n -= instret;
   }

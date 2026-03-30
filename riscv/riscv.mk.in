@@ -6,6 +6,7 @@ riscv_subproject_deps = \
 	disasm \
 	fesvr \
 	softfloat \
+	patch \
 
 riscv_CFLAGS = -fPIC -I$(src_dir)/fdt
 
@@ -18,7 +19,6 @@ riscv_install_prog_srcs = \
 riscv_install_hdrs = \
 	abstract_device.h \
 	abstract_interrupt_controller.h \
-	bloom_filter.h \
 	cachesim.h \
 	cfg.h \
 	common.h \
@@ -28,26 +28,34 @@ riscv_install_hdrs = \
 	debug_rom_defines.h \
 	decode.h \
 	devices.h \
-	dtb_discovery.h \
 	disasm.h \
 	dts.h \
 	encoding.h \
 	entropy_source.h \
 	extension.h \
 	isa_parser.h \
-	jtag_dtm.h \
 	log_file.h \
 	memtracer.h \
 	mmu.h \
 	platform.h \
 	processor.h \
-	remote_bitbang.h \
 	rocc.h \
 	sim.h \
 	simif.h \
 	trap.h \
 	triggers.h \
 	vector_unit.h \
+	dts_extension.h \
+	devices_extension.h \
+	v_ext_macros_extension.h \
+	easy_args.h \
+	spikehooker.h \
+	ext_utils.h \
+	tools_module.h \
+	simpoint_module.h \
+	option_configure_ext.h \
+	sim_event_ctrl.h \
+	ext_log.h \
 
 riscv_precompiled_hdrs = \
 	insn_template.h \
@@ -64,7 +72,6 @@ riscv_srcs = \
 	extensions.cc \
 	rocc.cc \
 	devices.cc \
-	dtb_discovery.cc \
 	rom.cc \
 	clint.cc \
 	plic.cc \
@@ -79,6 +86,14 @@ riscv_srcs = \
 	socketif.cc \
 	cfg.cc \
 	$(riscv_gen_srcs) \
+	dts_extension.cc \
+	rivai_uart.cc \
+	tools_module.cc \
+	sim_extension.cc \
+	simpoint_module.cc \
+	option_configure_ext.cc \
+	sim_event_ctrl.cc \
+	ext_log.cc \
 
 riscv_test_srcs = \
   check-opcode-overlap.t.cc \
@@ -415,10 +430,8 @@ riscv_insn_ext_b = \
 	clzw \
 	ctz \
 	ctzw \
-	orc_b \
-	rev8 \
-	rev8_rv32 \
-	brev8 \
+	gorci \
+	grevi \
 	max \
 	maxu \
 	min \
@@ -445,9 +458,9 @@ riscv_insn_ext_b = \
 	bseti \
 	sext_b \
 	sext_h \
-	zip \
+	shfli \
 	slli_uw \
-	unzip \
+	unshfli \
 	xnor \
 	xperm4 \
 	xperm8 \
@@ -965,14 +978,6 @@ riscv_insn_ext_zicond = \
 	czero_eqz \
 	czero_nez \
 
-riscv_insn_ext_zvfofp4min = \
-	vfext_vf2 \
-
-riscv_insn_ext_zvfofp8min = \
-	vfncvt_f_f_q \
-	vfncvt_sat_f_f_q \
-	vfncvtbf16_sat_f_f_w \
-
 riscv_insn_ext_zfbfmin = \
 	fcvt_bf16_s \
 	fcvt_s_bf16 \
@@ -1087,28 +1092,9 @@ riscv_insn_ext_zvksh = \
 	vsm3c_vi \
 	vsm3me_vv \
 
-riscv_insn_ext_zvbdot = \
-	vqbdotu_vv \
-	vqbdots_vv \
-	vfwbdot_vv \
-	vfbdot_vv \
-	vfqbdot_vv \
-	vfqbdot_alt_vv \
-
-riscv_insn_ext_zvldot = \
-	vqldotu_vv \
-	vqldots_vv \
-	vfwldot_vv \
-	vfqldot_vv \
-	vfqldot_alt_vv \
-
 riscv_insn_ext_zimop = \
 	mop_r_N \
 	mop_rr_N \
-
-riscv_insn_ext_zibi = \
-	beqi \
-	bnei \
 
 riscv_insn_ext_zcmop = \
 	c_mop_N \
@@ -1136,19 +1122,49 @@ riscv_insn_ext_zvk = \
 	$(riscv_insn_ext_zvksed) \
 	$(riscv_insn_ext_zvksh) \
 
-riscv_insn_ext_zvabd = \
-	vabs_v \
-	vabd_vv \
-	vabdu_vv \
-	vwabda_vv \
-	vwabdau_vv \
+riscv_insn_ext_xkgost = \
+	kuzn32esx \
+	kuzn32dsx \
+	kuzn32dl \
+	kuzn32dlh \
+	kuzn32elh \
+	kuzn32el \
+	magma32g \
+	sbg32tau1 \
+	sbg32tau2 \
+	sbg32lin1 \
+	sbg32lin2 \
+	kuzn64esx \
+	kuzn64dsx \
+	kuzn64dl \
+	kuzn64el \
+	magma64 \
+	sbg64tau1 \
+	sbg64tau2 \
+	sbg64lin1 \
+	sbg64lin2 \
 
-riscv_insn_ext_zvzip = \
-	vzip_vv \
-	vunzipe_v \
-	vunzipo_v \
-	vpaire_vv \
-	vpairo_vv \
+riscv_insn_ext_xvcgost = \
+        vmagma2r_vs \
+        vmagma2r_vv \
+        vkuze_vs \
+        vkuze_vv \
+        vkuzd_vs \
+        vkuzd_vv \
+        vsbglph_vv \
+        vsbglpl_vv \
+        vsbgxs_vv
+
+riscv_insn_ext_xvkgost = \
+	vmagma2r_vx \
+	vmagma2r_vv \
+	vkuzne_vs \
+	vkuzne_vv \
+	vkuznd_vs \
+	vkuznd_vv \
+	vkuznz_vs \
+	vsbglp_v \
+	vsbgsx_vv
 
 riscv_insn_list = \
 	$(riscv_insn_ext_i) \
@@ -1159,15 +1175,13 @@ riscv_insn_list = \
 	$(riscv_insn_ext_b) \
 	$(riscv_insn_ext_a) \
 	$(if $(HAVE_INT128),$(riscv_insn_ext_v),) \
-	$(riscv_insn_ext_zvfofp4min) \
-	$(riscv_insn_ext_zvfofp8min) \
 	$(riscv_insn_ext_bf16) \
 	$(riscv_insn_ext_cmo) \
 	$(riscv_insn_ext_d_zfa) \
 	$(riscv_insn_ext_f_zfa) \
 	$(riscv_insn_ext_h) \
 	$(riscv_insn_ext_k) \
-	$(if $(HAVE_INT128),$(riscv_insn_ext_q),) \
+	$(riscv_insn_ext_q) \
 	$(riscv_insn_ext_q_zfa) \
 	$(riscv_insn_ext_zacas) \
 	$(riscv_insn_ext_zabha) \
@@ -1178,18 +1192,16 @@ riscv_insn_list = \
 	$(riscv_insn_ext_zfh_zfa) \
 	$(riscv_insn_ext_zicond) \
 	$(riscv_insn_ext_zvk) \
-	$(riscv_insn_ext_zvbdot) \
-	$(riscv_insn_ext_zvldot) \
-	$(riscv_insn_ext_zvabd) \
-	$(riscv_insn_ext_zvzip) \
 	$(riscv_insn_priv) \
 	$(riscv_insn_smrnmi) \
 	$(riscv_insn_svinval) \
-	$(riscv_insn_ext_zibi) \
 	$(riscv_insn_ext_zimop) \
 	$(riscv_insn_ext_zcmop) \
 	$(riscv_insn_ext_zicfilp) \
 	$(riscv_insn_ext_zicfiss) \
+	$(riscv_insn_ext_xkgost) \
+	$(riscv_insn_ext_xvcgost) \
+	$(riscv_insn_ext_xvkgost) \
 
 riscv_gen_srcs = $(addsuffix .cc,$(riscv_insn_list))
 

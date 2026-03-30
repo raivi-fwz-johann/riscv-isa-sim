@@ -24,4 +24,4 @@ if (vd != vs2 && start < size) {
   }
 }
 
-VECTOR_END;
+P.VU.vstart->write(0);

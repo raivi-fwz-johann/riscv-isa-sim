@@ -110,6 +110,7 @@
 #define FRS3_D READ_FREG_D(insn.rs3())
 #define dirty_fp_state  STATE.sstatus->dirty(SSTATUS_FS)
 #define dirty_ext_state STATE.sstatus->dirty(SSTATUS_XS)
+#define dirty_vs_state  STATE.sstatus->dirty(SSTATUS_VS)
 #define DO_WRITE_FREG(reg, value) (STATE.FPR.write(reg, value), dirty_fp_state)
 #define WRITE_FRD(value) WRITE_FREG(insn.rd(), value)
 #define WRITE_FRD_H(value) \
@@ -145,9 +146,10 @@ do { \
 #define SHAMT (insn.i_imm() & 0x3F)
 #define BRANCH_TARGET (pc + insn.sb_imm())
 #define JUMP_TARGET (pc + insn.uj_imm())
-#define validate_rm(rm) ({ require(rm < 5); rm; })
-#define VFP_RM validate_rm(STATE.frm->read())
-#define RM (insn.rm() == 7 ? VFP_RM : validate_rm(insn.rm()))
+#define RM ({ int rm = insn.rm(); \
+              if (rm == 7) rm = STATE.frm->read(); \
+              if (rm > 4) throw trap_illegal_instruction(insn.bits()); \
+              rm; })
 
 static inline bool is_aligned(const unsigned val, const unsigned pos)
 {
@@ -162,6 +164,7 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
 #define require_rv32 require(xlen == 32)
 #define require_extension(s) require(p->extension_enabled(s))
 #define require_either_extension(A,B) require(p->extension_enabled(A) || p->extension_enabled(B));
+#define require_impl(s) require(p->supports_impl(s))
 #define require_fp          STATE.fflags->verify_permissions(insn, false)
 #define require_accelerator require(STATE.sstatus->enabled(SSTATUS_XS))
 #define require_vector_vs   require(p->any_vector_extensions() && STATE.sstatus->enabled(SSTATUS_VS))
@@ -172,12 +175,14 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     if (alu && !P.VU.vstart_alu) \
       require(P.VU.vstart->read() == 0); \
     WRITE_VSTATUS; \
+    dirty_vs_state; \
   } while (0);
 #define require_vector_novtype(is_log) \
   do { \
     require_vector_vs; \
     if (is_log) \
       WRITE_VSTATUS; \
+    dirty_vs_state; \
   } while (0);
 #define require_align(val, pos) require(is_aligned(val, pos))
 #define require_noover(astart, asize, bstart, bsize) \
@@ -221,8 +226,7 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
 #define zext_xlen(x) zext(x, xlen)
 
 #define set_pc(x) \
-  do { if (unlikely((x) & ~p->pc_alignment_mask())) \
-        return p->throw_instruction_address_misaligned(x); \
+  do { p->check_pc_alignment(x); \
        npc = sext_xlen(x); \
      } while (0)
 
@@ -264,21 +268,15 @@ inline bfloat16_t bf16(freg_t r) { return bf16(unboxBF16(r)); }
 inline float32_t f32(freg_t r) { return f32(unboxF32(r)); }
 inline float64_t f64(freg_t r) { return f64(unboxF64(r)); }
 inline float128_t f128(freg_t r) { return r; }
-inline float16_t f16(freg_t r, reg_t altfmt) { return altfmt ? bf16(r) : f16(r); }
-inline float32_t f32(freg_t r, UNUSED reg_t altfmt) { return f32(r); }
-inline float64_t f64(freg_t r, UNUSED reg_t altfmt) { return f64(r); }
 inline freg_t freg(float16_t f) { return { ((uint64_t)-1 << 16) | f.v, (uint64_t)-1 }; }
 inline freg_t freg(float32_t f) { return { ((uint64_t)-1 << 32) | f.v, (uint64_t)-1 }; }
 inline freg_t freg(float64_t f) { return { f.v, (uint64_t)-1 }; }
 inline freg_t freg(float128_t f) { return f; }
 #define F16_SIGN ((uint16_t)1 << 15)
-#define BF16_SIGN F16_SIGN
 #define F32_SIGN ((uint32_t)1 << 31)
 #define F64_SIGN ((uint64_t)1 << 63)
 #define fsgnj16(a, b, n, x) \
   f16((f16(a).v & ~F16_SIGN) | ((((x) ? f16(a).v : (n) ? F16_SIGN : 0) ^ f16(b).v) & F16_SIGN))
-#define bfsgnj16(a, b, n, x) \
-  bf16((bf16(a).v & ~BF16_SIGN) | ((((x) ? bf16(a).v : (n) ? BF16_SIGN : 0) ^ bf16(b).v) & BF16_SIGN))
 #define fsgnj32(a, b, n, x) \
   f32((f32(a).v & ~F32_SIGN) | ((((x) ? f32(a).v : (n) ? F32_SIGN : 0) ^ f32(b).v) & F32_SIGN))
 #define fsgnj64(a, b, n, x) \
@@ -371,10 +369,3 @@ inline long double to_f(float128_t f) { long double r; memcpy(&r, &f, sizeof(r))
 #define ZICFILP_IS_LP_EXPECTED(reg_num) \
   (((reg_num) != 1 && (reg_num) != 5 && (reg_num) != 7) ? \
    elp_t::LP_EXPECTED : elp_t::NO_LP_EXPECTED)
-#define maybe_set_elp(reg_num) \
-  if (unlikely(p->extension_enabled(EXT_ZICFILP))) { \
-    if (unlikely(ZICFILP_IS_LP_EXPECTED(reg_num) == elp_t::LP_EXPECTED)) { \
-      serialize(); \
-      return p->set_lpad_expected(npc); \
-    } \
-  }
