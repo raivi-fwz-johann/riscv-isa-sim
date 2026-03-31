@@ -20,6 +20,9 @@ class fds_t
   reg_t alloc(int fd);
   void dealloc(reg_t fd);
   int lookup(reg_t fd);
+  const std::vector<int>& raw_fds() const { return fds; }
+  void replace_all(std::vector<int> new_fds);
+  void set_fd(reg_t fd, int host_fd);
  private:
   std::vector<int> fds;
 };
@@ -31,7 +34,9 @@ class syscall_t : public device_t
   ~syscall_t();
 
   void set_chroot(const char* where);
-  
+  fds_t& get_fds() { return fds; }
+  const fds_t& get_fds() const { return fds; }
+
  private:
   const char* identity() { return "syscall_proxy"; }
 

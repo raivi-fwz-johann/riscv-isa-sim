@@ -27,6 +27,7 @@ fesvr_srcs = \
   memif.cc \
   dtm.cc \
   syscall.cc \
+  checkpoint_host.cc \
   device.cc \
   rfb.cc \
   context.cc \
