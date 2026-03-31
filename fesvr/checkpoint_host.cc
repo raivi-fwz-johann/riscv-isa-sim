@@ -104,12 +104,6 @@ void htif_t::save_checkpoint_host_state(std::ostream& out) const
 {
   out << "# spike syscall host state" << std::endl;
 
-  char* cwd = getcwd(nullptr, 0);
-  if (cwd != nullptr) {
-    out << "cwd " << hex_encode(cwd) << std::endl;
-    free(cwd);
-  }
-
   const auto& fds_vec = syscall_proxy.get_fds().raw_fds();
   for (size_t guest_fd = 0; guest_fd < fds_vec.size(); ++guest_fd) {
     int host_fd = fds_vec[guest_fd];
@@ -167,17 +161,6 @@ void htif_t::load_checkpoint_host_state(std::istream& in)
     std::istringstream iss(line);
     std::string tag;
     iss >> tag;
-
-    if (tag == "cwd") {
-      std::string encoded_cwd;
-      if (!(iss >> encoded_cwd))
-        throw std::runtime_error("malformed checkpoint host cwd entry");
-
-      const std::string cwd = hex_decode(encoded_cwd);
-      if (chdir(cwd.c_str()) != 0)
-        throw std::runtime_error("failed to restore checkpoint cwd: " + cwd);
-      continue;
-    }
 
     if (tag != "fd")
       throw std::runtime_error("unknown checkpoint host-state record: " + tag);
