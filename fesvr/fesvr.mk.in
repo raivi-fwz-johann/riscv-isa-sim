@@ -22,6 +22,7 @@ fesvr_install_lib = yes
 fesvr_install_pcs = yes
 
 fesvr_srcs = \
+  checkpoint_host.cc \
   elfloader.cc \
   htif.cc \
   memif.cc \

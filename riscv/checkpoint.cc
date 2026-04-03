@@ -3,13 +3,15 @@
 #include "dts.h"
 #include "libfdt.h"
 #include "processor.h"
-#include "sim.h"
+#include <fesvr/htif.h>
 
+#include <cstdlib>
 #include <fcntl.h>
 #include <iomanip>
 #include <list>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <utility>
@@ -41,12 +43,14 @@ void checkpoint_t::load_cpu() {
 void checkpoint_t::load_ram() {
   if (!config.snapshot_load_name) return;
   ram_deserialize(config.snapshot_load_name);
+  host_deserialize(config.snapshot_load_name);
 }
 
 void checkpoint_t::save() {
   if (!config.snapshot_save_name) return;
   cpu_serialize(config.snapshot_save_name);
   ram_serialize(config.snapshot_save_name);
+  host_serialize(config.snapshot_save_name);
 }
 
 // ---------------------------------------------------------------------------
@@ -117,11 +121,51 @@ static inline void remove_directory(const std::string &directory) {
   }
 }
 
+static bool parse_hex_field_value(const std::string &line, const char *key,
+                                  addr_t *value) {
+  const std::string prefix = std::string(key) + ":";
+  if (line.rfind(prefix, 0) != 0)
+    return false;
+
+  *value = static_cast<addr_t>(std::strtoull(line.c_str() + prefix.size(),
+                                             nullptr, 0));
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Deserialize (load)
 // ---------------------------------------------------------------------------
 
 void checkpoint_t::cpu_deserialize(const char *load_name) {
+  std::string regs_load_name(load_name);
+  regs_load_name.append(".re_regs");
+
+  std::ifstream regs_fin(regs_load_name);
+  if (regs_fin.good()) {
+    addr_t tohost_addr = 0;
+    addr_t fromhost_addr = 0;
+    std::string line;
+    while (std::getline(regs_fin, line)) {
+      addr_t parsed_value = 0;
+      if (parse_hex_field_value(line, "tohost_addr", &parsed_value)) {
+        tohost_addr = parsed_value;
+        continue;
+      }
+
+      if (parse_hex_field_value(line, "fromhost_addr", &parsed_value))
+        fromhost_addr = parsed_value;
+    }
+
+    if (auto *htif = dynamic_cast<htif_t *>(sim);
+        htif && (tohost_addr != 0 || fromhost_addr != 0)) {
+      htif->set_tohost_addr(tohost_addr);
+      htif->set_fromhost_addr(fromhost_addr);
+      std::cerr << "NOTE: restored HTIF addresses: tohost=0x" << std::hex
+                << htif->get_tohost_addr() << " fromhost=0x"
+                << htif->get_fromhost_addr() << std::endl;
+    }
+  }
+
   // Put processor in debug mode so checkpoint bootrom can write debug CSRs
   proc->get_state()->debug_mode = true;
   proc->set_privilege(PRV_M, false);
@@ -169,34 +213,12 @@ void checkpoint_t::cpu_deserialize(const char *load_name) {
   std::vector<char> tramp_rom((char*)trampoline, (char*)trampoline + sizeof(trampoline));
   trampoline_rom = std::make_shared<rom_device_t>(tramp_rom);
   bus->add_device(DEFAULT_RSTVEC, trampoline_rom.get());
-
-  // Restore HTIF tohost/fromhost addresses from .re_regs file
-  std::string regs_load_name(load_name);
-  regs_load_name.append(".re_regs");
-  std::ifstream regs_fin(regs_load_name);
-  if (regs_fin.good()) {
-    auto *sim_ptr = static_cast<sim_t*>(sim);
-    std::string line;
-    while (std::getline(regs_fin, line)) {
-      auto pos = line.find(':');
-      if (pos == std::string::npos) continue;
-      std::string key = line.substr(0, pos);
-      std::string val = line.substr(pos + 1);
-      if (key == "tohost_addr")
-        sim_ptr->set_tohost_addr(strtoull(val.c_str(), nullptr, 16));
-      else if (key == "fromhost_addr")
-        sim_ptr->set_fromhost_addr(strtoull(val.c_str(), nullptr, 16));
-    }
-    regs_fin.close();
-    std::cerr << "NOTE: restored HTIF addresses: tohost=0x" << std::hex
-              << sim_ptr->get_tohost_addr() << " fromhost=0x"
-              << sim_ptr->get_fromhost_addr() << std::endl;
-  }
 }
 
 #define MAINRAM_BASE   ".mainram"
 #define MAINRAM_ZIP    ".mainram.zip"
 #define MAINRAM_ZST    ".mainram.zst"
+#define HOSTSTATE_EXT  ".hoststate"
 
 void checkpoint_t::ram_deserialize(const char *load_name) {
   bool mainram_zip_file_exist = false;
@@ -270,6 +292,35 @@ void checkpoint_t::ram_deserialize(const char *load_name) {
     remove_file(mainram_load_name);
     remove_directory(temp_directory_name);
   }
+}
+
+void checkpoint_t::host_deserialize(const char *load_name) {
+  auto *htif = dynamic_cast<htif_t *>(sim);
+  if (!htif)
+    return;
+
+  std::string hoststate_load_name(load_name);
+  hoststate_load_name.append(HOSTSTATE_EXT);
+
+  std::ifstream hoststate_fin(hoststate_load_name);
+  if (hoststate_fin.good()) {
+    try {
+      htif->load_checkpoint_host_state(hoststate_fin);
+    } catch (const std::runtime_error &err) {
+      std::cerr << "failed to restore checkpoint host state from "
+                << hoststate_load_name << ": " << err.what() << std::endl;
+      exit(-1);
+    }
+    return;
+  }
+
+  if (htif->restore_legacy_checkpoint_host_state())
+    return;
+
+  std::cerr << "warning: checkpoint host state file not found: "
+            << hoststate_load_name
+            << "; continuing without restoring host-side syscall state"
+            << std::endl;
 }
 
 // ---------------------------------------------------------------------------
@@ -415,10 +466,12 @@ void checkpoint_t::save_regs_file(const char *save_name) {
                    << state->csrmap[CSR_PMPADDR0 + i]->read() << std::endl;
   }
 
-  // Save HTIF tohost/fromhost addresses for checkpoint restore
-  auto *sim_ptr = static_cast<sim_t*>(sim);
-  regs_save_fout << "tohost_addr:0x" << std::hex << sim_ptr->get_tohost_addr() << std::endl;
-  regs_save_fout << "fromhost_addr:0x" << std::hex << sim_ptr->get_fromhost_addr() << std::endl;
+  if (auto *htif = dynamic_cast<htif_t *>(sim)) {
+    regs_save_fout << "tohost_addr:0x" << std::hex << htif->get_tohost_addr()
+                   << std::endl;
+    regs_save_fout << "fromhost_addr:0x" << std::hex
+                   << htif->get_fromhost_addr() << std::endl;
+  }
 
   std::cerr << "NOTE: creating a new regs file: " << regs_save_name
             << std::endl;
@@ -792,4 +845,22 @@ void checkpoint_t::ram_serialize(const char *save_name) {
     std::cerr << "NOTE: creating a new main ram:  " << mainram_save_name
               << std::endl;
   }
+}
+
+void checkpoint_t::host_serialize(const char *save_name) {
+  auto *htif = dynamic_cast<htif_t *>(sim);
+  if (!htif)
+    return;
+
+  std::string hoststate_save_name(save_name);
+  hoststate_save_name.append(HOSTSTATE_EXT);
+
+  std::ofstream hoststate_fout(hoststate_save_name);
+  if (!hoststate_fout.is_open()) {
+    std::cerr << "error: create host state file " << hoststate_save_name
+              << " failed" << std::endl;
+    exit(-1);
+  }
+
+  htif->save_checkpoint_host_state(hoststate_fout);
 }

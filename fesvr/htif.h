@@ -9,6 +9,7 @@
 #include "byteorder.h"
 #include "../riscv/platform.h"
 #include <string.h>
+#include <iosfwd>
 #include <map>
 #include <vector>
 #include <assert.h>
@@ -32,6 +33,9 @@ class htif_t : public chunked_memif_t
   int exit_code();
   void set_expected_xlen(unsigned int m) { expected_xlen = m; }
   virtual memif_t& memif() { return mem; }
+  void save_checkpoint_host_state(std::ostream& out) const;
+  void load_checkpoint_host_state(std::istream& in);
+  bool restore_legacy_checkpoint_host_state();
 
   template<typename T> inline T from_target(target_endian<T> n) const
   {

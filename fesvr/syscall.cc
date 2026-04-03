@@ -14,6 +14,7 @@
 #include <termios.h>
 #include <sstream>
 #include <iostream>
+#include <utility>
 using namespace std::placeholders;
 
 #define RISCV_AT_FDCWD -100
@@ -490,12 +491,32 @@ reg_t fds_t::alloc(int fd)
   return i;
 }
 
+void fds_t::replace_all(std::vector<int> new_fds)
+{
+  for (int fd : fds)
+    if (fd >= 0)
+      close(fd);
+
+  fds = std::move(new_fds);
+}
+
+void fds_t::set_fd(reg_t fd, int host_fd)
+{
+  if (fd >= fds.size())
+    fds.resize(fd + 1, -1);
+
+  if (fds[fd] >= 0)
+    close(fds[fd]);
+
+  fds[fd] = host_fd;
+}
+
 void fds_t::dealloc(reg_t fd)
 {
   fds[fd] = -1;
 }
 
-int fds_t::lookup(reg_t fd)
+int fds_t::lookup(reg_t fd) const
 {
   if (int(fd) == RISCV_AT_FDCWD)
     return AT_FDCWD;
