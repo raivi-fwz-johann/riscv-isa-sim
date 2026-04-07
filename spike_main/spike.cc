@@ -9,6 +9,7 @@
 #include "cachesim.h"
 #include "extension.h"
 #include "checkpoint.h"
+#include "extensions/integration/sparta_legacy_hook_abi.h"
 #include <dlfcn.h>
 #include <fesvr/option_parser.h>
 #include <stdexcept>
@@ -95,6 +96,16 @@ static void help(int exit_code = 1)
 
   exit(exit_code);
 }
+
+void decodeHook(void*, uint64_t, uint64_t) __attribute__((weak)) {}
+bool commitHook() __attribute__((weak)) { return false; }
+uint64_t getNpcHook(uint64_t npc) __attribute__((weak)) { return npc; }
+reg_t excptionHook(void*, uint64_t, trap_t&) __attribute__((weak)) { return 0; }
+void catchDataBeforeWriteHook(uint64_t, uint64_t, uint32_t, std::shared_ptr<bool>) __attribute__((weak)) {}
+void catchDataBeforeCsrHook(int, uint64_t, std::shared_ptr<bool>) __attribute__((weak)) {}
+bool getCsrHook(int, uint64_t) __attribute__((weak)) { return true; }
+bool continueHook() __attribute__((weak)) { return true; }
+bool exitHook(int) __attribute__((weak)) { return true; }
 
 static void suggest_help()
 {
