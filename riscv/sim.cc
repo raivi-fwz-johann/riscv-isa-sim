@@ -2,8 +2,10 @@
 
 #include "config.h"
 #include "dtb_discovery.h"
+#include "integration/sparta_legacy_hook_adapter.h"
 #include "sim.h"
 #include "mmu.h"
+#include "runtime/null_hook_dispatcher.h"
 #include "dts.h"
 #include "remote_bitbang.h"
 #include "byteorder.h"
@@ -66,6 +68,9 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
     debug_module(this, dm_config)
 {
   signal(SIGINT, &handle_signal);
+
+  hook_dispatcher_ = std::make_unique<null_hook_dispatcher_t>();
+  hook_dispatcher_ = std::make_unique<sparta_legacy_hook_adapter_t>();
 
   sout_.rdbuf(std::cerr.rdbuf()); // debug output goes to stderr by default
 

@@ -8,6 +8,7 @@
 #include "devices.h"
 #include "log_file.h"
 #include "processor.h"
+#include "runtime/spike_hook_dispatcher.h"
 #include "simif.h"
 
 #include <fesvr/htif.h>
@@ -61,6 +62,8 @@ public:
   processor_t* get_core(size_t i) { return procs.at(i); }
   abstract_interrupt_controller_t* get_intctrl() const { assert(plic.get()); return plic.get(); }
   virtual const cfg_t &get_cfg() const override { return *cfg; }
+  spike_hook_dispatcher_t* hook_dispatcher() const { return hook_dispatcher_.get(); }
+  void set_hook_dispatcher(std::unique_ptr<spike_hook_dispatcher_t> hook) { hook_dispatcher_ = std::move(hook); }
 
   virtual const std::map<size_t, processor_t*>& get_harts() const override { return harts; }
   const bus_t& get_bus() const {  return bus;}
@@ -97,6 +100,7 @@ private:
   std::shared_ptr<clint_t> clint;
   std::shared_ptr<plic_t> plic;
   bus_t bus;
+  std::unique_ptr<spike_hook_dispatcher_t> hook_dispatcher_;
   log_file_t log_file;
 
   FILE *cmd_file; // pointer to debug command input file
