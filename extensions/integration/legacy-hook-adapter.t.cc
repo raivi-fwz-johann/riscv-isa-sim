@@ -35,6 +35,7 @@ int main()
   if (decode_calls != 1) return 1;
 
   if (!hook.on_commit(commit_event_t{nullptr, 0x1000})) return 2;
+  if (commit_calls != 1) return 12;
 
   auto next = hook.on_next_pc(next_pc_event_t{nullptr, 0x1000, 0x1004});
   if (!next.override_next_pc || next.next_pc != 0x1008) return 3;

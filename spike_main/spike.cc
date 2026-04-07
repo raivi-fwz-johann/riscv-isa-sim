@@ -97,15 +97,15 @@ static void help(int exit_code = 1)
   exit(exit_code);
 }
 
-void decodeHook(void*, uint64_t, uint64_t) __attribute__((weak)) {}
-bool commitHook() __attribute__((weak)) { return false; }
-uint64_t getNpcHook(uint64_t npc) __attribute__((weak)) { return npc; }
-reg_t excptionHook(void*, uint64_t, trap_t&) __attribute__((weak)) { return 0; }
-void catchDataBeforeWriteHook(uint64_t, uint64_t, uint32_t, std::shared_ptr<bool>) __attribute__((weak)) {}
-void catchDataBeforeCsrHook(int, uint64_t, std::shared_ptr<bool>) __attribute__((weak)) {}
-bool getCsrHook(int, uint64_t) __attribute__((weak)) { return true; }
-bool continueHook() __attribute__((weak)) { return true; }
-bool exitHook(int) __attribute__((weak)) { return true; }
+void decodeHook(void*, uint64_t, uint64_t) {}
+bool commitHook() { return false; }
+uint64_t getNpcHook(uint64_t npc) { return npc; }
+reg_t excptionHook(void*, uint64_t, trap_t&) { return 0; }
+void catchDataBeforeWriteHook(uint64_t, uint64_t, uint32_t, std::shared_ptr<bool>) {}
+void catchDataBeforeCsrHook(int, uint64_t, std::shared_ptr<bool>) {}
+bool getCsrHook(int, uint64_t) { return true; }
+bool continueHook() { return true; }
+bool exitHook(int) { return true; }
 
 static void suggest_help()
 {
