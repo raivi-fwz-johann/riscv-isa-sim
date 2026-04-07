@@ -12,4 +12,5 @@ extensions_srcs = \
 
 extensions_test_srcs = \
 	runtime/dispatcher-defaults.t.cc \
+	runtime/sim-hook-access.t.cc \
 	integration/legacy-hook-adapter.t.cc \

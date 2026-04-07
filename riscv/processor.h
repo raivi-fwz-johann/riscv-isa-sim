@@ -247,6 +247,7 @@ public:
   reg_t get_csr(int which) { return get_csr(which, insn_t(0), false, true); }
   mmu_t* get_mmu() { return mmu; }
   state_t* get_state() { return &state; }
+  simif_t* get_sim() const { return sim; }
   unsigned get_xlen() const { return xlen; }
   unsigned paddr_bits() { return isa.get_max_xlen() == 64 ? 56 : 34; }
   unsigned get_const_xlen() const {
