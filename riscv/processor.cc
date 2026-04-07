@@ -6,6 +6,9 @@
 #include "common.h"
 #include "config.h"
 #include "decode_macros.h"
+#include "sim.h"
+#include "runtime/hook_events.h"
+#include "runtime/spike_hook_dispatcher.h"
 #include "simif.h"
 #include "mmu.h"
 #include "disasm.h"
@@ -30,6 +33,19 @@
 #undef STATE
 #define STATE state
 
+static inline spike_hook_dispatcher_t* get_hook_dispatcher(processor_t* p)
+{
+  if (!p) {
+    return nullptr;
+  }
+
+  auto* sim = p->get_sim();
+  if (!sim) {
+    return nullptr;
+  }
+
+  return static_cast<sim_t*>(sim)->hook_dispatcher();
+}
 processor_t::processor_t(const char* isa_str, const char* priv_str,
                          const cfg_t *cfg,
                          simif_t* sim, uint32_t id, bool halt_on_reset,
@@ -382,6 +398,20 @@ void processor_t::debug_output_log(std::stringstream *s)
 
 void processor_t::take_trap(trap_t& t, reg_t epc)
 {
+  insn_fetch_t fetch{};
+  try {
+    fetch = mmu->load_insn(epc);
+  } catch (...) {
+    fetch.insn = insn_t(0x1);
+  }
+
+  if (auto* hook = get_hook_dispatcher(this)) {
+    auto decision = hook->on_trap(trap_event_t{&fetch, epc, t});
+    if (decision.consume_trap) {
+      return;
+    }
+  }
+
   unsigned max_xlen = isa.get_max_xlen();
 
   if (debug) {

@@ -6,7 +6,10 @@
 #include "csrs.h"
 // For processor_t:
 #include "processor.h"
+#include "sim.h"
 #include "mmu.h"
+#include "runtime/hook_events.h"
+#include "runtime/spike_hook_dispatcher.h"
 // For get_field():
 #include "decode_macros.h"
 // For trap_virtual_instruction and trap_illegal_instruction:
@@ -21,6 +24,20 @@
 // STATE macro used by require_privilege() macro:
 #undef STATE
 #define STATE (*state)
+
+static inline spike_hook_dispatcher_t* get_hook_dispatcher(processor_t* proc)
+{
+  if (!proc) {
+    return nullptr;
+  }
+
+  auto* sim = proc->get_sim();
+  if (!sim) {
+    return nullptr;
+  }
+
+  return static_cast<sim_t*>(sim)->hook_dispatcher();
+}
 
 // implement class csr_t
 csr_t::csr_t(processor_t* const proc, const reg_t addr):
@@ -54,6 +71,22 @@ csr_t::~csr_t() {
 }
 
 void csr_t::write(const reg_t val) noexcept {
+  if (auto* hook = get_hook_dispatcher(proc)) {
+    if (!hook->allow_csr_write(csr_gate_event_t{int(address), val})) {
+      return;
+    }
+
+    pre_csr_event_t pre_csr{int(address), val, false};
+    hook->on_pre_csr(pre_csr);
+    const bool success = unlogged_write(val);
+    if (success) {
+      pre_csr.real_store = true;
+      hook->on_pre_csr(pre_csr);
+      log_write();
+    }
+    return;
+  }
+
   const bool success = unlogged_write(val);
   if (success) {
     log_write();
