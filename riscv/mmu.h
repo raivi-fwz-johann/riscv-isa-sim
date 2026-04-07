@@ -7,7 +7,9 @@
 #include "decode.h"
 #include "trap.h"
 #include "common.h"
+#include "runtime/hook_events.h"
 #include "simif.h"
+#include "sim.h"
 #include "processor.h"
 #include "memtracer.h"
 #include "../fesvr/byteorder.h"
@@ -104,6 +106,12 @@ public:
   template<typename T>
   T ALWAYS_INLINE load(reg_t addr, xlate_flags_t xlate_flags = {}) {
     target_endian<T> res;
+    if (auto* hook = hook_dispatcher()) {
+      if (!hook->should_continue(continue_event_t{proc, static_cast<sim_t*>(proc->get_sim()), hook_continue_site_t::mem_load})) {
+        target_endian<T> zero{};
+        return from_target(zero);
+      }
+    }
     bool aligned = (addr & (sizeof(T) - 1)) == 0;
     auto [tlb_hit, host_addr, _] = access_tlb(tlb_load, addr);
 
@@ -144,6 +152,14 @@ public:
   template<typename T>
   void ALWAYS_INLINE store(reg_t addr, T val, xlate_flags_t xlate_flags = {}) {
     MMU_OBSERVE_STORE(addr, val, sizeof(T));
+    auto* hook = hook_dispatcher();
+    pre_store_event_t pre_store{addr, reg_t(val), uint32_t(sizeof(T)), false};
+    if (hook) {
+      if (!hook->should_continue(continue_event_t{proc, static_cast<sim_t*>(proc->get_sim()), hook_continue_site_t::mem_store})) {
+        return;
+      }
+      hook->on_pre_store(pre_store);
+    }
     bool aligned = (addr & (sizeof(T) - 1)) == 0;
     auto [tlb_hit, host_addr, _] = access_tlb(tlb_store, addr);
 
@@ -152,6 +168,10 @@ public:
     } else {
       target_endian<T> target_val = to_target(val);
       store_slow_path(addr, sizeof(T), (const uint8_t*)&target_val, xlate_flags, true, false);
+    }
+    if (hook) {
+      pre_store.real_store = true;
+      hook->on_pre_store(pre_store);
     }
   }
 
@@ -373,6 +393,19 @@ public:
 private:
   simif_t* sim;
   processor_t* proc;
+
+  spike_hook_dispatcher_t* hook_dispatcher() const {
+    if (!proc) {
+      return nullptr;
+    }
+
+    auto* simif = proc->get_sim();
+    if (!simif) {
+      return nullptr;
+    }
+
+    return static_cast<sim_t*>(simif)->hook_dispatcher();
+  }
   memtracer_list_t tracer;
   reg_t load_reservation_address;
   reg_t blocksz;
