@@ -5517,6 +5517,25 @@ printf "%s\n" "$as_me: configuring default subproject : fesvr" >&6;}
 
 printf "%s\n" "#define FESVR_ENABLED /**/" >>confdefs.h
 
+    # Add subproject to our running list
+
+    subprojects="$subprojects extensions"
+
+    # Process the subproject appropriately. If enabled add it to the
+    # $enabled_subprojects running shell variable, set a
+    # SUBPROJECT_ENABLED C define, and include the appropriate
+    # 'subproject.ac'.
+
+
+      { printf "%s\n" "$as_me:${as_lineno-$LINENO}: configuring default subproject : extensions" >&5
+printf "%s\n" "$as_me: configuring default subproject : extensions" >&6;}
+      ac_config_files="$ac_config_files extensions.mk:extensions/extensions.mk.in"
+
+      enable_extensions_sproj="yes"
+      subprojects_enabled="$subprojects_enabled extensions"
+
+printf "%s\n" "#define EXTENSIONS_ENABLED /**/" >>confdefs.h
+
       { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for pthread_create in -lpthread" >&5
 printf %s "checking for pthread_create in -lpthread... " >&6; }
 if test ${ac_cv_lib_pthread_pthread_create+y}
@@ -7671,6 +7690,7 @@ for ac_config_target in $ac_config_targets
 do
   case $ac_config_target in
     "fesvr.mk") CONFIG_FILES="$CONFIG_FILES fesvr.mk:fesvr/fesvr.mk.in" ;;
+    "extensions.mk") CONFIG_FILES="$CONFIG_FILES extensions.mk:extensions/extensions.mk.in" ;;
     "riscv.mk") CONFIG_FILES="$CONFIG_FILES riscv.mk:riscv/riscv.mk.in" ;;
     "disasm.mk") CONFIG_FILES="$CONFIG_FILES disasm.mk:disasm/disasm.mk.in" ;;
     "customext.mk") CONFIG_FILES="$CONFIG_FILES customext.mk:customext/customext.mk.in" ;;
@@ -8268,5 +8288,3 @@ if test -n "$ac_unrecognized_opts" && test "$enable_option_checking" != no; then
   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: WARNING: unrecognized options: $ac_unrecognized_opts" >&5
 printf "%s\n" "$as_me: WARNING: unrecognized options: $ac_unrecognized_opts" >&2;}
 fi
-
-

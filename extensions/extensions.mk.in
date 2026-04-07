@@ -1,0 +1,12 @@
+extensions_subproject_deps =
+
+extensions_install_hdrs = \
+	runtime/hook_events.h \
+	runtime/spike_hook_dispatcher.h \
+	runtime/null_hook_dispatcher.h \
+
+extensions_srcs =
+
+extensions_test_srcs = \
+	runtime/dispatcher-defaults.t.cc \
+
