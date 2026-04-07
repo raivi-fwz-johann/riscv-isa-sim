@@ -18,9 +18,6 @@
 /* Define if subproject MCPPBS_SPROJ_NORM is enabled */
 #undef FESVR_ENABLED
 
-/* Define if subproject MCPPBS_SPROJ_NORM is enabled */
-#undef EXTENSIONS_ENABLED
-
 /* define if the Boost library is available */
 #undef HAVE_BOOST
 
