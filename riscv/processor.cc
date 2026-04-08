@@ -7,7 +7,6 @@
 #include "config.h"
 #include "decode_macros.h"
 #include "sim.h"
-#include "runtime/hook_events.h"
 #include "runtime/spike_hook_dispatcher.h"
 #include "simif.h"
 #include "mmu.h"
@@ -408,8 +407,7 @@ void processor_t::take_trap(trap_t& t, reg_t epc)
   }
 
   if (auto* hook = get_hook_dispatcher(this)) {
-    auto decision = hook->on_trap(trap_event_t{&fetch, epc, t});
-    if (decision.consume_trap) {
+    if (hook->on_trap(&fetch, epc, t) != 0) {
       return;
     }
   }

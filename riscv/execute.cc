@@ -5,7 +5,6 @@
 #include "sim.h"
 #include "mmu.h"
 #include "disasm.h"
-#include "runtime/hook_events.h"
 #include "runtime/spike_hook_dispatcher.h"
 #include "decode_macros.h"
 #include <cassert>
@@ -79,7 +78,7 @@ static void commit_log_print_value(FILE *log_file, int width, uint64_t val)
 static void commit_log_print_insn(processor_t *p, reg_t pc, insn_t insn)
 {
   if (auto* hook = get_hook_dispatcher(p)) {
-    if (hook->on_commit(commit_event_t{p, pc})) {
+    if (hook->on_commit()) {
       return;
     }
   }
@@ -196,8 +195,8 @@ static inline reg_t execute_insn_logged(processor_t* p, reg_t pc, insn_fetch_t f
   try {
     npc = fetch.func(p, fetch.insn, pc);
     if (auto* hook = get_hook_dispatcher(p)) {
-      hook->on_decode(decode_event_t{p, &fetch, pc, npc});
-      hook->on_exec_observe(exec_observe_event_t{p, &fetch, pc, npc});
+      hook->on_decode(&fetch, pc, npc);
+      hook->on_exec_observe(&fetch, pc, npc);
     }
     if (npc != PC_SERIALIZE_BEFORE) {
       if (p->get_log_commits_enabled()) {
@@ -315,9 +314,9 @@ void processor_t::step(size_t n)
           pc = execute_insn_logged(this, pc, fetch);
           advance_pc();
           if (auto* hook = get_hook_dispatcher(this)) {
-            auto decision = hook->on_next_pc(next_pc_event_t{this, state.pc, state.pc});
-            if (decision.override_next_pc) {
-              state.pc = decision.next_pc;
+            auto next_pc = hook->on_next_pc(state.pc);
+            if (next_pc != state.pc) {
+              state.pc = next_pc;
               pc = state.pc;
             }
           }
@@ -340,7 +339,7 @@ void processor_t::step(size_t n)
         for (auto ic_entry = _mmu->access_icache(pc); instret < n; instret++) {
           if (auto* hook = get_hook_dispatcher(this)) {
             if (instret == prev_instret) {
-              hook->on_fake_step(fake_step_event_t{this, instret, prev_instret, pc});
+              hook->on_fake_step(instret, prev_instret);
             }
           }
           prev_instret = instret;
