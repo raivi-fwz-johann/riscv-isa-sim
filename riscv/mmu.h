@@ -154,12 +154,15 @@ public:
   void ALWAYS_INLINE store(reg_t addr, T val, xlate_flags_t xlate_flags = {}) {
     MMU_OBSERVE_STORE(addr, val, sizeof(T));
     auto* hook = hook_dispatcher();
-    auto real_store = std::make_shared<bool>(false);
+    std::shared_ptr<bool> real_store;
     if (hook) {
       if (!hook->should_continue()) {
         return;
       }
-      hook->on_pre_store(addr, reg_t(val), uint32_t(sizeof(T)), real_store);
+      if (commits_log_active()) {
+        real_store = std::make_shared<bool>(false);
+        hook->on_pre_store(addr, reg_t(val), uint32_t(sizeof(T)), real_store);
+      }
     }
     bool aligned = (addr & (sizeof(T) - 1)) == 0;
     auto [tlb_hit, host_addr, _] = access_tlb(tlb_store, addr);
@@ -170,7 +173,7 @@ public:
       target_endian<T> target_val = to_target(val);
       store_slow_path(addr, sizeof(T), (const uint8_t*)&target_val, xlate_flags, true, false);
     }
-    if (hook) {
+    if (real_store) {
       *real_store = true;
     }
   }
@@ -410,6 +413,22 @@ private:
 
     auto* runtime = static_cast<sim_t*>(sim)->runtime_ext();
     return runtime ? runtime->hook_dispatcher() : nullptr;
+  }
+  runtime_log_ext_t* runtime_log_ext() const {
+    if (!sim) {
+      return nullptr;
+    }
+
+    auto* runtime = static_cast<sim_t*>(sim)->runtime_ext();
+    return runtime ? runtime->runtime_log_ext() : nullptr;
+  }
+  bool commits_log_active() const {
+    if (!proc) {
+      return false;
+    }
+
+    auto* log_ext = runtime_log_ext();
+    return proc->get_log_commits_enabled() || (log_ext && log_ext->log_commits_stant_enabled());
   }
   memtracer_list_t tracer;
   reg_t load_reservation_address;

@@ -5,6 +5,7 @@
 #include "sim.h"
 #include "mmu.h"
 #include "disasm.h"
+#include "runtime/runtime_log_ext.h"
 #include "runtime/spike_hook_dispatcher.h"
 #include "decode_macros.h"
 #include <cassert>
@@ -23,6 +24,43 @@ static inline spike_hook_dispatcher_t* get_hook_dispatcher(processor_t* p)
   auto* sim = static_cast<sim_t*>(simif);
   auto* runtime = sim->runtime_ext();
   return runtime ? runtime->hook_dispatcher() : nullptr;
+}
+
+static inline runtime_log_ext_t* get_runtime_log_ext(processor_t* p)
+{
+  if (!p) {
+    return nullptr;
+  }
+
+  auto* simif = p->get_sim();
+  if (!simif) {
+    return nullptr;
+  }
+
+  auto* sim = static_cast<sim_t*>(simif);
+  auto* runtime = sim->runtime_ext();
+  return runtime ? runtime->runtime_log_ext() : nullptr;
+}
+
+static inline bool commits_log_active(processor_t* p)
+{
+  if (!p) {
+    return false;
+  }
+
+  auto* log_ext = get_runtime_log_ext(p);
+  return p->get_log_commits_enabled() || (log_ext && log_ext->log_commits_stant_enabled());
+}
+
+static inline bool fast_commit_log_active(processor_t* p)
+{
+  auto* log_ext = get_runtime_log_ext(p);
+  return log_ext && log_ext->fast_log_commits_enabled();
+}
+
+static inline bool commit_hook_active(processor_t* p)
+{
+  return commits_log_active(p) || fast_commit_log_active(p);
 }
 
 static void commit_log_reset(processor_t* p)
@@ -79,10 +117,16 @@ static void commit_log_print_value(FILE *log_file, int width, uint64_t val)
 
 static void commit_log_print_insn(processor_t *p, reg_t pc, insn_t insn)
 {
-  if (auto* hook = get_hook_dispatcher(p)) {
-    if (hook->on_commit()) {
-      return;
+  if (commit_hook_active(p)) {
+    if (auto* hook = get_hook_dispatcher(p)) {
+      if (hook->on_commit()) {
+        return;
+      }
     }
+  }
+
+  if (!commits_log_active(p)) {
+    return;
   }
 
   FILE *log_file = p->get_log_file();
@@ -183,11 +227,25 @@ inline void processor_t::update_histogram(reg_t pc)
 // These two functions are expected to be inlined by the compiler separately in
 // the processor_t::step() loop. The logged variant is used in the slow path
 static inline reg_t execute_insn_fast(processor_t* p, reg_t pc, insn_fetch_t fetch) {
-  return fetch.func(p, fetch.insn, pc);
+  const bool fast_commit_log = fast_commit_log_active(p);
+  if (fast_commit_log) {
+    commit_log_reset(p);
+    commit_log_stash_privilege(p);
+  }
+
+  reg_t npc = fetch.func(p, fetch.insn, pc);
+
+  if (fast_commit_log) {
+    if (auto* hook = get_hook_dispatcher(p)) {
+      hook->on_exec_observe(&fetch, pc, 0);
+      hook->on_commit();
+    }
+  }
+  return npc;
 }
 static inline reg_t execute_insn_logged(processor_t* p, reg_t pc, insn_fetch_t fetch)
 {
-  if (p->get_log_commits_enabled()) {
+  if (commits_log_active(p) || fast_commit_log_active(p)) {
     commit_log_reset(p);
     commit_log_stash_privilege(p);
   }
@@ -196,23 +254,25 @@ static inline reg_t execute_insn_logged(processor_t* p, reg_t pc, insn_fetch_t f
 
   try {
     npc = fetch.func(p, fetch.insn, pc);
-    if (auto* hook = get_hook_dispatcher(p)) {
-      hook->on_decode(&fetch, pc, npc);
-      hook->on_exec_observe(&fetch, pc, npc);
+    if (commits_log_active(p)) {
+      if (auto* hook = get_hook_dispatcher(p)) {
+        hook->on_decode(&fetch, pc, npc);
+        hook->on_exec_observe(&fetch, pc, npc);
+      }
     }
     if (npc != PC_SERIALIZE_BEFORE) {
-      if (p->get_log_commits_enabled()) {
+      if (commits_log_active(p)) {
         commit_log_print_insn(p, pc, fetch.insn);
       }
      }
   } catch (wait_for_interrupt_t &t) {
-      if (p->get_log_commits_enabled()) {
+      if (commits_log_active(p)) {
         commit_log_print_insn(p, pc, fetch.insn);
       }
       throw;
   } catch(mem_trap_t& t) {
       //handle segfault in midlle of vector load/store
-      if (p->get_log_commits_enabled()) {
+      if (commits_log_active(p)) {
         for (auto item : p->get_state()->log_reg_write) {
           if ((item.first & 3) == 3) {
             commit_log_print_insn(p, pc, fetch.insn);
@@ -231,8 +291,15 @@ static inline reg_t execute_insn_logged(processor_t* p, reg_t pc, insn_fetch_t f
 
 bool processor_t::slow_path() const
 {
+  const bool fast_commit_log = fast_commit_log_active(const_cast<processor_t*>(this));
+  const bool stant_log = [&]() {
+    auto* log_ext = get_runtime_log_ext(const_cast<processor_t*>(this));
+    return log_ext && log_ext->log_commits_stant_enabled();
+  }();
+
   return debug || state.single_step != state.STEP_NONE || state.debug_mode ||
-         log_commits_enabled || histogram_enabled || in_wfi || check_triggers_icount;
+         stant_log || (log_commits_enabled && !fast_commit_log) ||
+         histogram_enabled || in_wfi || check_triggers_icount;
 }
 
 // fetch/decode/execute loop
@@ -315,11 +382,13 @@ void processor_t::step(size_t n)
             disasm(fetch.insn);
           pc = execute_insn_logged(this, pc, fetch);
           advance_pc();
-          if (auto* hook = get_hook_dispatcher(this)) {
-            auto next_pc = hook->on_next_pc(state.pc);
-            if (next_pc != state.pc) {
-              state.pc = next_pc;
-              pc = state.pc;
+          if (commits_log_active(this)) {
+            if (auto* hook = get_hook_dispatcher(this)) {
+              auto next_pc = hook->on_next_pc(state.pc);
+              if (next_pc != state.pc) {
+                state.pc = next_pc;
+                pc = state.pc;
+              }
             }
           }
 
