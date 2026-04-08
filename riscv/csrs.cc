@@ -31,12 +31,14 @@ static inline spike_hook_dispatcher_t* get_hook_dispatcher(processor_t* proc)
     return nullptr;
   }
 
-  auto* sim = proc->get_sim();
-  if (!sim) {
+  auto* simif = proc->get_sim();
+  if (!simif) {
     return nullptr;
   }
 
-  return static_cast<sim_t*>(sim)->hook_dispatcher();
+  auto* sim = static_cast<sim_t*>(simif);
+  auto* runtime = sim->runtime_ext();
+  return runtime ? runtime->hook_dispatcher() : nullptr;
 }
 
 // implement class csr_t
