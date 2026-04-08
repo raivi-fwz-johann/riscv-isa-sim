@@ -9,6 +9,7 @@
 #include "processor.h"
 #include "sim.h"
 #include "mmu.h"
+#include "runtime/runtime_log_ext.h"
 #include "runtime/spike_hook_dispatcher.h"
 // For get_field():
 #include "decode_macros.h"
@@ -39,6 +40,32 @@ static inline spike_hook_dispatcher_t* get_hook_dispatcher(processor_t* proc)
   auto* sim = static_cast<sim_t*>(simif);
   auto* runtime = sim->runtime_ext();
   return runtime ? runtime->hook_dispatcher() : nullptr;
+}
+
+static inline runtime_log_ext_t* get_runtime_log_ext(processor_t* proc)
+{
+  if (!proc) {
+    return nullptr;
+  }
+
+  auto* simif = proc->get_sim();
+  if (!simif) {
+    return nullptr;
+  }
+
+  auto* sim = static_cast<sim_t*>(simif);
+  auto* runtime = sim->runtime_ext();
+  return runtime ? runtime->runtime_log_ext() : nullptr;
+}
+
+static inline bool commits_log_active(processor_t* proc)
+{
+  if (!proc) {
+    return false;
+  }
+
+  auto* log_ext = get_runtime_log_ext(proc);
+  return proc->get_log_commits_enabled() || (log_ext && log_ext->log_commits_stant_enabled());
 }
 
 // implement class csr_t
@@ -73,19 +100,21 @@ csr_t::~csr_t() {
 }
 
 void csr_t::write(const reg_t val) noexcept {
-  if (auto* hook = get_hook_dispatcher(proc)) {
-    if (!hook->allow_csr_write(int(address), val)) {
+  if (commits_log_active(proc)) {
+    if (auto* hook = get_hook_dispatcher(proc)) {
+      if (!hook->allow_csr_write(int(address), val)) {
+        return;
+      }
+
+      auto real_store = std::make_shared<bool>(false);
+      hook->on_pre_csr(int(address), val, real_store);
+      const bool success = unlogged_write(val);
+      if (success) {
+        *real_store = true;
+        log_write();
+      }
       return;
     }
-
-    auto real_store = std::make_shared<bool>(false);
-    hook->on_pre_csr(int(address), val, real_store);
-    const bool success = unlogged_write(val);
-    if (success) {
-      *real_store = true;
-      log_write();
-    }
-    return;
   }
 
   const bool success = unlogged_write(val);

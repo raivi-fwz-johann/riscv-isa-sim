@@ -7,6 +7,7 @@
 #include "config.h"
 #include "decode_macros.h"
 #include "sim.h"
+#include "runtime/runtime_log_ext.h"
 #include "runtime/spike_hook_dispatcher.h"
 #include "simif.h"
 #include "mmu.h"
@@ -47,6 +48,32 @@ static inline spike_hook_dispatcher_t* get_hook_dispatcher(processor_t* p)
   auto* sim = static_cast<sim_t*>(simif);
   auto* runtime = sim->runtime_ext();
   return runtime ? runtime->hook_dispatcher() : nullptr;
+}
+
+static inline runtime_log_ext_t* get_runtime_log_ext(processor_t* p)
+{
+  if (!p) {
+    return nullptr;
+  }
+
+  auto* simif = p->get_sim();
+  if (!simif) {
+    return nullptr;
+  }
+
+  auto* sim = static_cast<sim_t*>(simif);
+  auto* runtime = sim->runtime_ext();
+  return runtime ? runtime->runtime_log_ext() : nullptr;
+}
+
+static inline bool commits_log_active(processor_t* p)
+{
+  if (!p) {
+    return false;
+  }
+
+  auto* log_ext = get_runtime_log_ext(p);
+  return p->get_log_commits_enabled() || (log_ext && log_ext->log_commits_stant_enabled());
 }
 
 processor_t::processor_t(const char* isa_str, const char* priv_str,
@@ -286,6 +313,14 @@ reg_t processor_t::select_an_interrupt_with_default_priority(reg_t enabled_inter
 
 void processor_t::take_interrupt(reg_t pending_interrupts)
 {
+  if (commits_log_active(this)) {
+    if (auto* hook = get_hook_dispatcher(this)) {
+      if (!hook->should_continue()) {
+        return;
+      }
+    }
+  }
+
   reg_t s_pending_interrupts = 0;
   reg_t vstopi = 0;
   reg_t vs_pending_interrupt = 0;
@@ -408,9 +443,11 @@ void processor_t::take_trap(trap_t& t, reg_t epc)
     fetch.insn = insn_t(0x1);
   }
 
-  if (auto* hook = get_hook_dispatcher(this)) {
-    if (hook->on_trap(&fetch, epc, t) != 0) {
-      return;
+  if (commits_log_active(this)) {
+    if (auto* hook = get_hook_dispatcher(this)) {
+      if (hook->on_trap(&fetch, epc, t) != 0) {
+        return;
+      }
     }
   }
 
