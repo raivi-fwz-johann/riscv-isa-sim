@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <memory>
 #include <stdlib.h>
 
 // virtual memory configuration
@@ -107,7 +108,7 @@ public:
   T ALWAYS_INLINE load(reg_t addr, xlate_flags_t xlate_flags = {}) {
     target_endian<T> res;
     if (auto* hook = hook_dispatcher()) {
-      if (!hook->should_continue(continue_event_t{proc, static_cast<sim_t*>(proc->get_sim()), hook_continue_site_t::mem_load})) {
+      if (!hook->should_continue()) {
         target_endian<T> zero{};
         return from_target(zero);
       }
@@ -153,12 +154,12 @@ public:
   void ALWAYS_INLINE store(reg_t addr, T val, xlate_flags_t xlate_flags = {}) {
     MMU_OBSERVE_STORE(addr, val, sizeof(T));
     auto* hook = hook_dispatcher();
-    pre_store_event_t pre_store{addr, reg_t(val), uint32_t(sizeof(T)), false};
+    auto real_store = std::make_shared<bool>(false);
     if (hook) {
-      if (!hook->should_continue(continue_event_t{proc, static_cast<sim_t*>(proc->get_sim()), hook_continue_site_t::mem_store})) {
+      if (!hook->should_continue()) {
         return;
       }
-      hook->on_pre_store(pre_store);
+      hook->on_pre_store(addr, reg_t(val), uint32_t(sizeof(T)), real_store);
     }
     bool aligned = (addr & (sizeof(T) - 1)) == 0;
     auto [tlb_hit, host_addr, _] = access_tlb(tlb_store, addr);
@@ -170,8 +171,7 @@ public:
       store_slow_path(addr, sizeof(T), (const uint8_t*)&target_val, xlate_flags, true, false);
     }
     if (hook) {
-      pre_store.real_store = true;
-      hook->on_pre_store(pre_store);
+      *real_store = true;
     }
   }
 

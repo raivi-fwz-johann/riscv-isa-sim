@@ -2,13 +2,13 @@
 
 // For std::any_of
 #include <algorithm>
+#include <memory>
 
 #include "csrs.h"
 // For processor_t:
 #include "processor.h"
 #include "sim.h"
 #include "mmu.h"
-#include "runtime/hook_events.h"
 #include "runtime/spike_hook_dispatcher.h"
 // For get_field():
 #include "decode_macros.h"
@@ -72,16 +72,15 @@ csr_t::~csr_t() {
 
 void csr_t::write(const reg_t val) noexcept {
   if (auto* hook = get_hook_dispatcher(proc)) {
-    if (!hook->allow_csr_write(csr_gate_event_t{int(address), val})) {
+    if (!hook->allow_csr_write(int(address), val)) {
       return;
     }
 
-    pre_csr_event_t pre_csr{int(address), val, false};
-    hook->on_pre_csr(pre_csr);
+    auto real_store = std::make_shared<bool>(false);
+    hook->on_pre_csr(int(address), val, real_store);
     const bool success = unlogged_write(val);
     if (success) {
-      pre_csr.real_store = true;
-      hook->on_pre_csr(pre_csr);
+      *real_store = true;
       log_write();
     }
     return;

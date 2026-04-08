@@ -1,66 +1,47 @@
 #include "integration/legacy_hook_adapter.h"
 #include "integration/legacy_hook_abi.h"
-#include <memory>
 
-void legacy_hook_adapter_t::on_decode(const decode_event_t& event)
+void legacy_hook_adapter_t::on_decode(void* fetch, reg_t pc, reg_t npc)
 {
-  decodeHook(event.fetch, event.pc, event.npc);
+  decodeHook(fetch, pc, npc);
 }
 
-bool legacy_hook_adapter_t::on_commit(const commit_event_t& event)
+bool legacy_hook_adapter_t::on_commit()
 {
-  (void)event;
   return commitHook();
 }
 
-next_pc_decision_t legacy_hook_adapter_t::on_next_pc(const next_pc_event_t& event)
+reg_t legacy_hook_adapter_t::on_next_pc(reg_t candidate_npc)
 {
-  next_pc_decision_t decision;
-  const auto next_pc = getNpcHook(event.candidate_npc);
-  decision.override_next_pc = next_pc != event.candidate_npc;
-  decision.next_pc = next_pc;
-  return decision;
+  return getNpcHook(candidate_npc);
 }
 
-trap_decision_t legacy_hook_adapter_t::on_trap(const trap_event_t& event)
+reg_t legacy_hook_adapter_t::on_trap(void* fetch, reg_t epc, trap_t& trap)
 {
-  trap_decision_t decision;
-  const auto code = excptionHook(event.fetch, event.epc, event.trap);
-  if (code != 0) {
-    decision.consume_trap = true;
-    decision.return_code = code;
-  }
-  return decision;
+  return excptionHook(fetch, epc, trap);
 }
 
-bool legacy_hook_adapter_t::should_continue(const continue_event_t& event)
+bool legacy_hook_adapter_t::should_continue()
 {
-  (void)event;
   return continueHook();
 }
 
-void legacy_hook_adapter_t::on_pre_store(pre_store_event_t& event)
+void legacy_hook_adapter_t::on_pre_store(reg_t addr, reg_t data, uint32_t len, std::shared_ptr<bool> real_store)
 {
-  auto real_store = std::make_shared<bool>(event.real_store);
-  catchDataBeforeWriteHook(event.addr, event.data, event.len, real_store);
-  event.real_store = *real_store;
+  catchDataBeforeWriteHook(addr, data, len, real_store);
 }
 
-bool legacy_hook_adapter_t::allow_csr_write(const csr_gate_event_t& event)
+bool legacy_hook_adapter_t::allow_csr_write(int which, reg_t value)
 {
-  return getCsrHook(event.which, event.value);
+  return getCsrHook(which, value);
 }
 
-void legacy_hook_adapter_t::on_pre_csr(pre_csr_event_t& event)
+void legacy_hook_adapter_t::on_pre_csr(int which, reg_t value, std::shared_ptr<bool> real_store)
 {
-  auto real_store = std::make_shared<bool>(event.real_store);
-  catchDataBeforeCsrHook(event.which, event.value, real_store);
-  event.real_store = *real_store;
+  catchDataBeforeCsrHook(which, value, real_store);
 }
 
-exit_decision_t legacy_hook_adapter_t::on_exit(const exit_event_t& event)
+bool legacy_hook_adapter_t::on_exit(int code)
 {
-  exit_decision_t decision;
-  decision.allow_exit = exitHook(event.code);
-  return decision;
+  return exitHook(code);
 }

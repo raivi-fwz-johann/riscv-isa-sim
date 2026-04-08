@@ -5,7 +5,6 @@
 #include "integration/legacy_hook_adapter.h"
 #include "sim.h"
 #include "mmu.h"
-#include "runtime/hook_events.h"
 #include "runtime/null_hook_dispatcher.h"
 #include "dts.h"
 #include "remote_bitbang.h"
@@ -324,7 +323,7 @@ void sim_t::step(size_t n)
         current_proc = 0;
         reg_t rtc_ticks = INTERLEAVE / INSNS_PER_RTC_TICK;
         auto* hook = hook_dispatcher();
-        if (!hook || hook->should_continue(continue_event_t{nullptr, this, hook_continue_site_t::run_loop})) {
+        if (!hook || hook->should_continue()) {
           for (auto &dev : devices) dev->tick(rtc_ticks);
         }
       }
