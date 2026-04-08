@@ -69,8 +69,8 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
 {
   signal(SIGINT, &handle_signal);
 
-  runtime_ext_ = std::make_unique<runtime_ext_t>();
-  runtime_ext_->set_hook_dispatcher(std::make_unique<legacy_hook_adapter_t>());
+  runtime_ctx_ = std::make_unique<spike_runtime_context_t>();
+  runtime_ctx_->set_hook_dispatcher(std::make_unique<legacy_hook_adapter_t>());
 
   sout_.rdbuf(std::cerr.rdbuf()); // debug output goes to stderr by default
 
@@ -322,9 +322,9 @@ void sim_t::step(size_t n)
       if (++current_proc == procs.size()) {
         current_proc = 0;
         reg_t rtc_ticks = INTERLEAVE / INSNS_PER_RTC_TICK;
-        auto* hook = runtime_ext() ? runtime_ext()->hook_dispatcher() : nullptr;
+        auto* hook = runtime_context() ? runtime_context()->hook_dispatcher() : nullptr;
         auto* proc = procs[current_proc];
-        auto* log_ext = runtime_ext() ? runtime_ext()->runtime_log_ext() : nullptr;
+        auto* log_ext = runtime_context() ? runtime_context()->runtime_log_ext() : nullptr;
         const bool commits_log_active =
           proc && (proc->get_log_commits_enabled() || (log_ext && log_ext->log_commits_stant_enabled()));
         if (!hook || !commits_log_active || hook->should_continue()) {

@@ -8,7 +8,7 @@
 #include "devices.h"
 #include "log_file.h"
 #include "processor.h"
-#include "runtime/runtime_ext.h"
+#include "runtime/runtime_context.h"
 #include "simif.h"
 
 #include <fesvr/htif.h>
@@ -61,8 +61,8 @@ public:
   processor_t* get_core(size_t i) { return procs.at(i); }
   abstract_interrupt_controller_t* get_intctrl() const { assert(plic.get()); return plic.get(); }
   virtual const cfg_t &get_cfg() const override { return *cfg; }
-  runtime_ext_t* runtime_ext() const { return runtime_ext_.get(); }
-  void set_runtime_ext(std::unique_ptr<runtime_ext_t> runtime_ext) { runtime_ext_ = std::move(runtime_ext); }
+  spike_runtime_context_t* runtime_context() const { return runtime_ctx_.get(); }
+  void set_runtime_context(std::unique_ptr<spike_runtime_context_t> runtime_ctx) { runtime_ctx_ = std::move(runtime_ctx); }
 
   virtual const std::map<size_t, processor_t*>& get_harts() const override { return harts; }
   const bus_t& get_bus() const {  return bus;}
@@ -89,7 +89,7 @@ private:
   std::shared_ptr<clint_t> clint;
   std::shared_ptr<plic_t> plic;
   bus_t bus;
-  std::unique_ptr<runtime_ext_t> runtime_ext_;
+  std::unique_ptr<spike_runtime_context_t> runtime_ctx_;
   log_file_t log_file;
 
   FILE *cmd_file; // pointer to debug command input file

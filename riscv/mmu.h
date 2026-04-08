@@ -411,7 +411,7 @@ private:
       return nullptr;
     }
 
-    auto* runtime = static_cast<sim_t*>(sim)->runtime_ext();
+    auto* runtime = static_cast<sim_t*>(sim)->runtime_context();
     return runtime ? runtime->hook_dispatcher() : nullptr;
   }
   runtime_log_ext_t* runtime_log_ext() const {
@@ -419,7 +419,7 @@ private:
       return nullptr;
     }
 
-    auto* runtime = static_cast<sim_t*>(sim)->runtime_ext();
+    auto* runtime = static_cast<sim_t*>(sim)->runtime_context();
     return runtime ? runtime->runtime_log_ext() : nullptr;
   }
   bool commits_log_active() const {
