@@ -4,14 +4,14 @@ extensions_install_hdrs = \
 	runtime/hook_events.h \
 	runtime/spike_hook_dispatcher.h \
 	runtime/null_hook_dispatcher.h \
-	integration/sparta_legacy_hook_abi.h \
-	integration/sparta_legacy_hook_adapter.h \
+	integration/legacy_hook_abi.h \
+	integration/legacy_hook_adapter.h \
 
 extensions_srcs = \
-	integration/sparta_legacy_hook_abi.cc \
-	integration/sparta_legacy_hook_adapter.cc \
+	integration/legacy_hook_abi.cc \
+	integration/legacy_hook_adapter.cc \
 
 extensions_test_srcs = \
 	runtime/dispatcher-defaults.t.cc \
 	runtime/sim-hook-access.t.cc \
-	integration/legacy-hook-adapter.t.cc \
+	integration/legacy-hook-adapter-override.t.cc \

@@ -1,4 +1,4 @@
-#include "integration/sparta_legacy_hook_abi.h"
+#include "integration/legacy_hook_abi.h"
 
 __attribute__((weak)) void decodeHook(void*, uint64_t, uint64_t) {}
 __attribute__((weak)) bool commitHook() { return false; }

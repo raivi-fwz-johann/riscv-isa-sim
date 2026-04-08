@@ -1,5 +1,5 @@
-#include "integration/sparta_legacy_hook_adapter.h"
-#include "integration/sparta_legacy_hook_abi.h"
+#include "integration/legacy_hook_adapter.h"
+#include "integration/legacy_hook_abi.h"
 #include "trap.h"
 #include <memory>
 
@@ -29,7 +29,7 @@ bool exitHook(int) { exit_calls++; return false; }
 
 int main()
 {
-  sparta_legacy_hook_adapter_t hook;
+  legacy_hook_adapter_t hook;
   trap_illegal_instruction trap(0);
 
   hook.on_decode(decode_event_t{nullptr, nullptr, 0x1000, 0x1004});
