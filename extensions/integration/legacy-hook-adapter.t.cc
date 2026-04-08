@@ -1,4 +1,5 @@
 #include "integration/sparta_legacy_hook_adapter.h"
+#include "integration/sparta_legacy_hook_abi.h"
 #include "trap.h"
 #include <memory>
 

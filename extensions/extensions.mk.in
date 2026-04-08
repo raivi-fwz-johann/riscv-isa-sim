@@ -8,6 +8,7 @@ extensions_install_hdrs = \
 	integration/sparta_legacy_hook_adapter.h \
 
 extensions_srcs = \
+	integration/sparta_legacy_hook_abi.cc \
 	integration/sparta_legacy_hook_adapter.cc \
 
 extensions_test_srcs = \
