@@ -46,7 +46,7 @@ static inline spike_hook_dispatcher_t* get_hook_dispatcher(processor_t* p)
   }
 
   auto* sim = static_cast<sim_t*>(simif);
-  auto* runtime = sim->runtime_ext();
+  auto* runtime = sim->runtime_context();
   return runtime ? runtime->hook_dispatcher() : nullptr;
 }
 
@@ -62,7 +62,7 @@ static inline runtime_log_ext_t* get_runtime_log_ext(processor_t* p)
   }
 
   auto* sim = static_cast<sim_t*>(simif);
-  auto* runtime = sim->runtime_ext();
+  auto* runtime = sim->runtime_context();
   return runtime ? runtime->runtime_log_ext() : nullptr;
 }
 
