@@ -15,12 +15,14 @@ static inline spike_hook_dispatcher_t* get_hook_dispatcher(processor_t* p)
     return nullptr;
   }
 
-  auto* sim = p->get_sim();
-  if (!sim) {
+  auto* simif = p->get_sim();
+  if (!simif) {
     return nullptr;
   }
 
-  return static_cast<sim_t*>(sim)->hook_dispatcher();
+  auto* sim = static_cast<sim_t*>(simif);
+  auto* runtime = sim->runtime_ext();
+  return runtime ? runtime->hook_dispatcher() : nullptr;
 }
 
 static void commit_log_reset(processor_t* p)

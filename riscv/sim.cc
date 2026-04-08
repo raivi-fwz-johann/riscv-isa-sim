@@ -5,7 +5,6 @@
 #include "integration/legacy_hook_adapter.h"
 #include "sim.h"
 #include "mmu.h"
-#include "runtime/null_hook_dispatcher.h"
 #include "dts.h"
 #include "remote_bitbang.h"
 #include "byteorder.h"
@@ -69,8 +68,8 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
 {
   signal(SIGINT, &handle_signal);
 
-  hook_dispatcher_ = std::make_unique<null_hook_dispatcher_t>();
-  hook_dispatcher_ = std::make_unique<legacy_hook_adapter_t>();
+  runtime_ext_ = std::make_unique<runtime_ext_t>();
+  runtime_ext_->set_hook_dispatcher(std::make_unique<legacy_hook_adapter_t>());
 
   sout_.rdbuf(std::cerr.rdbuf()); // debug output goes to stderr by default
 
@@ -322,7 +321,7 @@ void sim_t::step(size_t n)
       if (++current_proc == procs.size()) {
         current_proc = 0;
         reg_t rtc_ticks = INTERLEAVE / INSNS_PER_RTC_TICK;
-        auto* hook = hook_dispatcher();
+        auto* hook = runtime_ext() ? runtime_ext()->hook_dispatcher() : nullptr;
         if (!hook || hook->should_continue()) {
           for (auto &dev : devices) dev->tick(rtc_ticks);
         }

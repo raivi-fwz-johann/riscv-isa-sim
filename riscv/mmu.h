@@ -395,16 +395,12 @@ private:
   processor_t* proc;
 
   spike_hook_dispatcher_t* hook_dispatcher() const {
-    if (!proc) {
+    if (!sim) {
       return nullptr;
     }
 
-    auto* simif = proc->get_sim();
-    if (!simif) {
-      return nullptr;
-    }
-
-    return static_cast<sim_t*>(simif)->hook_dispatcher();
+    auto* runtime = static_cast<sim_t*>(sim)->runtime_ext();
+    return runtime ? runtime->hook_dispatcher() : nullptr;
   }
   memtracer_list_t tracer;
   reg_t load_reservation_address;

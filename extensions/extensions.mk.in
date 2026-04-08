@@ -4,10 +4,12 @@ extensions_install_hdrs = \
 	runtime/hook_events.h \
 	runtime/spike_hook_dispatcher.h \
 	runtime/null_hook_dispatcher.h \
+	runtime/runtime_ext.h \
 	integration/legacy_hook_abi.h \
 	integration/legacy_hook_adapter.h \
 
 extensions_srcs = \
+	runtime/runtime_ext.cc \
 	integration/legacy_hook_abi.cc \
 	integration/legacy_hook_adapter.cc \
 
