@@ -2,7 +2,7 @@
 
 #include "runtime/spike_hook_dispatcher.h"
 
-class sparta_legacy_hook_adapter_t final : public spike_hook_dispatcher_t {
+class legacy_hook_adapter_t final : public spike_hook_dispatcher_t {
 public:
   void on_decode(const decode_event_t&) override;
   bool on_commit(const commit_event_t&) override;

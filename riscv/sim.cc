@@ -2,7 +2,7 @@
 
 #include "config.h"
 #include "dtb_discovery.h"
-#include "integration/sparta_legacy_hook_adapter.h"
+#include "integration/legacy_hook_adapter.h"
 #include "sim.h"
 #include "mmu.h"
 #include "runtime/hook_events.h"
@@ -71,7 +71,7 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
   signal(SIGINT, &handle_signal);
 
   hook_dispatcher_ = std::make_unique<null_hook_dispatcher_t>();
-  hook_dispatcher_ = std::make_unique<sparta_legacy_hook_adapter_t>();
+  hook_dispatcher_ = std::make_unique<legacy_hook_adapter_t>();
 
   sout_.rdbuf(std::cerr.rdbuf()); // debug output goes to stderr by default
 
