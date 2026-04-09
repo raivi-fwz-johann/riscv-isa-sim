@@ -3,18 +3,18 @@ extensions_subproject_deps =
 extensions_install_hdrs = \
 	runtime/spike_hook_dispatcher.h \
 	runtime/runtime_context.h \
-	runtime/runtime_log_ext.h \
+	runtime/spike_log_manager.h \
 	integration/legacy_hook_abi.h \
 	integration/legacy_hook_adapter.h \
 
 extensions_srcs = \
 	runtime/runtime_context.cc \
-	runtime/runtime_log_ext.cc \
+	runtime/spike_log_manager.cc \
 	integration/legacy_hook_abi.cc \
 	integration/legacy_hook_adapter.cc \
 
 extensions_test_srcs = \
 	runtime/dispatcher-defaults.t.cc \
-	runtime/runtime-log-ext.t.cc \
+	runtime/spike-log-manager.t.cc \
 	runtime/sim-hook-access.t.cc \
 	integration/legacy-hook-adapter-override.t.cc \

@@ -9,7 +9,7 @@
 #include "processor.h"
 #include "sim.h"
 #include "mmu.h"
-#include "runtime/runtime_log_ext.h"
+#include "runtime/spike_log_manager.h"
 #include "runtime/spike_hook_dispatcher.h"
 // For get_field():
 #include "decode_macros.h"
@@ -42,7 +42,7 @@ static inline spike_hook_dispatcher_t* get_hook_dispatcher(processor_t* proc)
   return runtime ? runtime->hook_dispatcher() : nullptr;
 }
 
-static inline runtime_log_ext_t* get_runtime_log_ext(processor_t* proc)
+static inline spike_log_manager_t* get_log_manager(processor_t* proc)
 {
   if (!proc) {
     return nullptr;
@@ -55,7 +55,7 @@ static inline runtime_log_ext_t* get_runtime_log_ext(processor_t* proc)
 
   auto* sim = static_cast<sim_t*>(simif);
   auto* runtime = sim->runtime_context();
-  return runtime ? runtime->runtime_log_ext() : nullptr;
+  return runtime ? runtime->log_manager() : nullptr;
 }
 
 static inline bool commits_log_active(processor_t* proc)
@@ -64,8 +64,8 @@ static inline bool commits_log_active(processor_t* proc)
     return false;
   }
 
-  auto* log_ext = get_runtime_log_ext(proc);
-  return proc->get_log_commits_enabled() || (log_ext && log_ext->log_commits_stant_enabled());
+  auto* log_manager = get_log_manager(proc);
+  return proc->get_log_commits_enabled() || (log_manager && log_manager->enable_commit_log_stant());
 }
 
 // implement class csr_t

@@ -404,21 +404,21 @@ private:
     auto* runtime = static_cast<sim_t*>(sim)->runtime_context();
     return runtime ? runtime->hook_dispatcher() : nullptr;
   }
-  runtime_log_ext_t* runtime_log_ext() const {
+  spike_log_manager_t* log_manager() const {
     if (!sim) {
       return nullptr;
     }
 
     auto* runtime = static_cast<sim_t*>(sim)->runtime_context();
-    return runtime ? runtime->runtime_log_ext() : nullptr;
+    return runtime ? runtime->log_manager() : nullptr;
   }
   bool commits_log_active() const {
     if (!proc) {
       return false;
     }
 
-    auto* log_ext = runtime_log_ext();
-    return proc->get_log_commits_enabled() || (log_ext && log_ext->log_commits_stant_enabled());
+    auto* manager = log_manager();
+    return proc->get_log_commits_enabled() || (manager && manager->enable_commit_log_stant());
   }
   memtracer_list_t tracer;
   reg_t load_reservation_address;
