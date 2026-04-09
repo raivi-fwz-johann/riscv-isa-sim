@@ -2,7 +2,6 @@
 
 #include "config.h"
 #include "dtb_discovery.h"
-#include "integration/legacy_hook_adapter.h"
 #include "sim.h"
 #include "mmu.h"
 #include "runtime/spike_log_manager.h"
@@ -70,7 +69,6 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
   signal(SIGINT, &handle_signal);
 
   runtime_ctx_ = std::make_unique<spike_runtime_context_t>();
-  runtime_ctx_->set_hook_dispatcher(std::make_unique<legacy_hook_adapter_t>());
 
   sout_.rdbuf(std::cerr.rdbuf()); // debug output goes to stderr by default
 
