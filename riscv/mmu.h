@@ -44,6 +44,7 @@ struct insn_fetch_t
 {
   insn_func_t func;
   insn_t insn;
+  reg_t pc_ppn = 0;
 };
 
 struct icache_entry_t {
@@ -340,6 +341,7 @@ public:
     entry->data = fetch;
 
     auto [check_tracer, _, paddr] = access_tlb(tlb_insn, addr, TLB_FLAGS, TLB_CHECK_TRACER);
+    entry->data.pc_ppn = paddr;
     if (unlikely(check_tracer)) {
       if (tracer.interested_in_range(paddr, paddr + 1, FETCH)) {
         entry->tag = -1;
@@ -363,6 +365,11 @@ public:
   inline insn_fetch_t load_insn(reg_t addr)
   {
     return refill_icache(addr, &icache[icache_index(addr)])->data;
+  }
+
+  inline insn_fetch_t ext_fetch_insn(reg_t addr)
+  {
+    return load_insn(addr);
   }
 
   std::tuple<bool, uintptr_t, reg_t> ALWAYS_INLINE access_tlb(const dtlb_entry_t* tlb, reg_t vaddr, reg_t allowed_flags = 0, reg_t required_flags = 0)

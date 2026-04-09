@@ -4,13 +4,17 @@ extensions_install_hdrs = \
 	runtime/spike_hook_dispatcher.h \
 	runtime/runtime_context.h \
 	runtime/spike_log_manager.h \
+	integration/spike_bootstrap.h \
 
 extensions_srcs = \
 	runtime/runtime_context.cc \
 	runtime/spike_log_manager.cc \
+	integration/spike_bootstrap.cc \
 
 extensions_test_srcs = \
 	runtime/dispatcher-defaults.t.cc \
 	runtime/spike-log-manager.t.cc \
 	runtime/custom-dispatcher-inject.t.cc \
 	runtime/sim-hook-access.t.cc \
+	runtime/fetch-only-interface.t.cc \
+	integration/spike-bootstrap-api.t.cc \
