@@ -5,7 +5,7 @@
 #include "integration/legacy_hook_adapter.h"
 #include "sim.h"
 #include "mmu.h"
-#include "runtime/runtime_log_ext.h"
+#include "runtime/spike_log_manager.h"
 #include "dts.h"
 #include "remote_bitbang.h"
 #include "byteorder.h"
@@ -324,9 +324,9 @@ void sim_t::step(size_t n)
         reg_t rtc_ticks = INTERLEAVE / INSNS_PER_RTC_TICK;
         auto* hook = runtime_context() ? runtime_context()->hook_dispatcher() : nullptr;
         auto* proc = procs[current_proc];
-        auto* log_ext = runtime_context() ? runtime_context()->runtime_log_ext() : nullptr;
+        auto* log_manager = runtime_context() ? runtime_context()->log_manager() : nullptr;
         const bool commits_log_active =
-          proc && (proc->get_log_commits_enabled() || (log_ext && log_ext->log_commits_stant_enabled()));
+          proc && (proc->get_log_commits_enabled() || (log_manager && log_manager->enable_commit_log_stant()));
         if (!hook || !commits_log_active || hook->should_continue()) {
           for (auto &dev : devices) dev->tick(rtc_ticks);
         }

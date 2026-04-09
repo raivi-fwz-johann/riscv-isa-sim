@@ -1,6 +1,6 @@
 #pragma once
 
-#include "runtime/runtime_log_ext.h"
+#include "runtime/spike_log_manager.h"
 #include "runtime/spike_hook_dispatcher.h"
 #include <memory>
 
@@ -11,10 +11,10 @@ public:
   spike_hook_dispatcher_t* hook_dispatcher() const { return hook_dispatcher_.get(); }
   void set_hook_dispatcher(std::unique_ptr<spike_hook_dispatcher_t> hook) { hook_dispatcher_ = std::move(hook); }
 
-  runtime_log_ext_t* runtime_log_ext() const { return runtime_log_ext_.get(); }
-  void set_runtime_log_ext(std::unique_ptr<runtime_log_ext_t> runtime_log_ext) { runtime_log_ext_ = std::move(runtime_log_ext); }
+  spike_log_manager_t* log_manager() const { return log_manager_.get(); }
+  void set_log_manager(std::unique_ptr<spike_log_manager_t> log_manager) { log_manager_ = std::move(log_manager); }
 
 private:
   std::unique_ptr<spike_hook_dispatcher_t> hook_dispatcher_;
-  std::unique_ptr<runtime_log_ext_t> runtime_log_ext_;
+  std::unique_ptr<spike_log_manager_t> log_manager_;
 };
