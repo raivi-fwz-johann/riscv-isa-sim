@@ -3,7 +3,6 @@ extensions_subproject_deps =
 extensions_install_hdrs = \
 	runtime/hook_events.h \
 	runtime/spike_hook_dispatcher.h \
-	runtime/null_hook_dispatcher.h \
 	runtime/runtime_context.h \
 	runtime/runtime_log_ext.h \
 	integration/legacy_hook_abi.h \
