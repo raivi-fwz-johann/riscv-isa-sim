@@ -7,7 +7,6 @@
 #include "decode.h"
 #include "trap.h"
 #include "common.h"
-#include "runtime/hook_events.h"
 #include "simif.h"
 #include "sim.h"
 #include "processor.h"

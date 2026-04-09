@@ -1,6 +1,12 @@
 #pragma once
 
-#include "runtime/hook_events.h"
+#include "decode.h"
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+
+struct insn_fetch_t;
+class trap_t;
 
 class spike_hook_dispatcher_t {
 public:
