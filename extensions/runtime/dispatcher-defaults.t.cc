@@ -1,10 +1,10 @@
-#include "runtime/null_hook_dispatcher.h"
+#include "runtime/spike_hook_dispatcher.h"
 #include "trap.h"
 #include <memory>
 
 int main()
 {
-  null_hook_dispatcher_t hook;
+  spike_hook_dispatcher_t hook;
 
   trap_illegal_instruction trap(0);
 
