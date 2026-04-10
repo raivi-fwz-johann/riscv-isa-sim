@@ -307,13 +307,24 @@ int sim_t::run()
 
 void sim_t::step(size_t n)
 {
+  const size_t interleave = [&]() -> size_t {
+    if (auto* runtime = runtime_context()) {
+      if (auto* policy = runtime->step_policy()) {
+        if (policy->interleave() != 0) {
+          return policy->interleave();
+        }
+      }
+    }
+    return INTERLEAVE;
+  }();
+
   for (size_t i = 0, steps = 0; i < n; i += steps)
   {
-    steps = std::min(n - i, INTERLEAVE - current_step);
+    steps = std::min(n - i, interleave - current_step);
     procs[current_proc]->step(steps);
 
     current_step += steps;
-    if (current_step == INTERLEAVE)
+    if (current_step == interleave)
     {
       current_step = 0;
       procs[current_proc]->get_mmu()->yield_load_reservation();
