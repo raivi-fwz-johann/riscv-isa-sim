@@ -22,6 +22,8 @@ struct spike_boot_options_t {
   bool socket_enabled = false;
   bool log_cache = false;
   bool log_commits = false;
+  bool log_commits_stant = false;
+  bool disable_host = false;
   bool memory_option = false;
   bool use_rbb = false;
   const char* kernel = nullptr;
@@ -29,6 +31,7 @@ struct spike_boot_options_t {
   const char* dtb_file = nullptr;
   const char* log_path = nullptr;
   reg_t blocksz = 64;
+  size_t step_interleave = 0;
   uint16_t rbb_port = 0;
   unsigned dmi_rti = 0;
   std::optional<unsigned long long> instructions;

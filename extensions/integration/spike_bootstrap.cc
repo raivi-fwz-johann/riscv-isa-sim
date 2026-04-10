@@ -53,6 +53,7 @@ static void help(int exit_code = 1)
   fprintf(stderr, "  --dtb-discovery       Enable direct device discovery from device tree blob. Requires --dtb and usage of special \"spike_plugin_params\" dts field.\n");
   fprintf(stderr, "  --log-cache-miss      Generate a log of cache miss\n");
   fprintf(stderr, "  --log-commits         Generate a log of commits info\n");
+  fprintf(stderr, "  --log-commits-stant   Generate a log of commits info suitable for stant utility\n");
   fprintf(stderr, "  --extension=<name>    Specify RoCC Extension\n");
   fprintf(stderr, "                          This flag can be used multiple times.\n");
   fprintf(stderr, "  --extlib=<name>       Shared library to load\n");
@@ -61,6 +62,7 @@ static void help(int exit_code = 1)
   fprintf(stderr, "  --dump-dts            Print device tree string and exit\n");
   fprintf(stderr, "  --dtb=<path>          Use specified device tree blob [default: auto-generate]\n");
   fprintf(stderr, "  --disable-dtb         Don't write the device tree blob into memory\n");
+  fprintf(stderr, "  --disable_host        Disable communicate with host when running simulation\n");
   fprintf(stderr, "  --kernel=<path>       Load kernel flat image into memory\n");
   fprintf(stderr, "  --initrd=<path>       Load kernel initrd into memory\n");
   fprintf(stderr, "  --bootargs=<args>     Provide custom bootargs for kernel [default: %s]\n",
@@ -84,6 +86,7 @@ static void help(int exit_code = 1)
   fprintf(stderr, "  --dm-no-abstractauto  Debug module won't support the abstractauto register\n");
   fprintf(stderr, "  --blocksz=<size>      Cache block size (B) for CMO operations(powers of 2) [default 64]\n");
   fprintf(stderr, "  --instructions=<n>    Stop after n instructions\n");
+  fprintf(stderr, "  --step=<interleave>   Set interleave for step in spike simulation\n");
 
   exit(exit_code);
 }
@@ -387,7 +390,10 @@ spike_boot_options_t spike_parse_argv_options(int argc, char** argv)
   parser.option(0, "dm-no-halt-groups", 0, [&](const char UNUSED *s){options.dm_config.support_haltgroups = false;});
   parser.option(0, "dm-no-abstractauto", 0, [&](const char UNUSED *s){options.dm_config.support_abstractauto = false;});
   parser.option(0, "log-commits", 0, [&](const char UNUSED *s){options.log_commits = true;});
+  parser.option(0, "log-commits-stant", 0, [&](const char UNUSED *s){options.log_commits_stant = true;});
   parser.option(0, "log", 1, [&](const char* s){options.log_path = s;});
+  parser.option(0, "step", 1, [&](const char* s){options.step_interleave = atoul_safe(s);});
+  parser.option(0, "disable_host", 0, [&](const char UNUSED *s){options.disable_host = true;});
   parser.option(0, "debug-cmd", 1, [&](const char* s){
     if ((options.cmd_file = fopen(s, "r")) == NULL) {
       fprintf(stderr, "Unable to open command file '%s'\n", s);
@@ -539,6 +545,27 @@ spike_boot_result_t spike_bootstrap(
 
   result.sim->set_debug(options.debug);
   result.sim->configure_log(options.log, options.log_commits);
+  if (options.log_commits_stant) {
+    if (auto* runtime = result.sim->runtime_context()) {
+      if (auto* manager = runtime->log_manager()) {
+        manager->set_enable_commit_log_stant(true);
+      }
+    }
+  }
+  if (options.disable_host) {
+    if (auto* runtime = result.sim->runtime_context()) {
+      if (auto* host_policy = runtime->host_policy()) {
+        host_policy->set_disable_host(true);
+      }
+    }
+  }
+  if (options.step_interleave != 0) {
+    if (auto* runtime = result.sim->runtime_context()) {
+      if (auto* policy = runtime->step_policy()) {
+        policy->set_interleave(options.step_interleave);
+      }
+    }
+  }
   result.sim->set_histogram(options.histogram);
   result.dump_dts_only = options.dump_dts;
   return result;

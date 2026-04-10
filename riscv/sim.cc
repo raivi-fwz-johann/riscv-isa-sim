@@ -416,6 +416,16 @@ bool sim_t::mmio_store(reg_t paddr, size_t len, const uint8_t* bytes)
   return bus.store(paddr, len, bytes);
 }
 
+bool sim_t::host_disabled() const
+{
+  if (auto* runtime = runtime_context()) {
+    if (auto* host_policy = runtime->host_policy()) {
+      return host_policy->disable_host();
+    }
+  }
+  return false;
+}
+
 void sim_t::set_rom()
 {
   const int reset_vec_size = 8;

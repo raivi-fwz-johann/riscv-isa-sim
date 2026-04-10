@@ -180,6 +180,7 @@ private:
   virtual size_t chunk_align() override { return 8; }
   virtual size_t chunk_max_size() override { return 8; }
   virtual endianness_t get_target_endianness() const override;
+  virtual bool host_disabled() const override;
 
 public:
   // Initialize this after procs, because in debug_module_t::reset() we
