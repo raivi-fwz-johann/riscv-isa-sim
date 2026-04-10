@@ -12,6 +12,32 @@
 
 #include <cassert>
 
+namespace {
+
+reg_t page_fault_cause_for(access_type type)
+{
+  switch (type) {
+    case FETCH: return CAUSE_FETCH_PAGE_FAULT;
+    case LOAD: return CAUSE_LOAD_PAGE_FAULT;
+    case STORE: return CAUSE_STORE_PAGE_FAULT;
+    default: abort();
+  }
+}
+
+spike_mmu_xlate_flags_t to_observe_flags(xlate_flags_t flags)
+{
+  spike_mmu_xlate_flags_t out;
+  out.forced_virt = flags.forced_virt;
+  out.hlvx = flags.hlvx;
+  out.lr = flags.lr;
+  out.ss_access = flags.ss_access;
+  out.clean_inval = flags.clean_inval;
+  out.enable_misalign = false;
+  return out;
+}
+
+}  // namespace
+
 mmu_t::mmu_t(simif_t* sim, endianness_t endianness, processor_t* proc, reg_t cache_blocksz)
  : sim(sim), proc(proc), blocksz(cache_blocksz),
 #ifdef RISCV_ENABLE_DUAL_ENDIAN
@@ -675,6 +701,16 @@ reg_t mmu_t::walk(mem_access_info_t access_info)
   reg_t page_mask = (reg_t(1) << PGSHIFT) - 1;
   reg_t satp = proc->get_state()->satp->readvirt(virt);
   vm_info vm = decode_vm_info(proc->get_const_xlen(), false, mode, satp);
+  spike_mmu_walk_observe_t mmu_walk;
+  mmu_walk.hart_id = proc->get_id();
+  mmu_walk.vaddr = addr;
+  mmu_walk.levels = vm.levels;
+  mmu_walk.xf_log = to_observe_flags(access_info.flags);
+  auto emit_mmu_walk = [&]() {
+    if (auto* hook = hook_dispatcher()) {
+      hook->on_mmu_walk(mmu_walk);
+    }
+  };
 
   bool ss_access = access_info.flags.ss_access;
 
@@ -685,9 +721,24 @@ reg_t mmu_t::walk(mem_access_info_t access_info)
   }
 
   if (vm.levels == 0)
-    return s2xlate(addr, addr & ((reg_t(2) << (proc->xlen-1))-1), type, type, virt, hlvx, false) & ~page_mask; // zero-extend from xlen
+  {
+    reg_t paddr = s2xlate(
+        addr,
+        addr & ((reg_t(2) << (proc->xlen-1))-1),
+        type,
+        type,
+        virt,
+        hlvx,
+        false); // zero-extend from xlen
+    mmu_walk.levels = 0;
+    mmu_walk.paddr = paddr;
+    emit_mmu_walk();
+    return paddr & ~page_mask;
+  }
 
   if (svukte_fault(addr, access_info)) {
+    mmu_walk.excp_cause = page_fault_cause_for(type);
+    emit_mmu_walk();
     throw_page_fault_exception(virt, addr, type);
   }
 
@@ -701,6 +752,7 @@ reg_t mmu_t::walk(mem_access_info_t access_info)
   reg_t masked_msbs = (addr >> (va_bits-1)) & mask;
   if (masked_msbs != 0 && masked_msbs != mask)
     vm.levels = 0;
+  mmu_walk.levels = vm.levels;
 
   reg_t base = vm.ptbase;
   for (int i = vm.levels - 1; i >= 0; i--) {
@@ -709,6 +761,7 @@ reg_t mmu_t::walk(mem_access_info_t access_info)
 
     // check that physical address of PTE is legal
     auto pte_paddr = s2xlate(addr, base + idx * vm.ptesize, LOAD, type, virt, false, true);
+    mmu_walk.pte_paddr[i] = pte_paddr;
     reg_t pte = pte_load(pte_paddr, addr, virt, type, vm.ptesize);
     reg_t ppn = (pte & ~reg_t(PTE_ATTR)) >> PTE_PPN_SHIFT;
     bool pbmte = virt ? (proc->get_state()->henvcfg->read() & HENVCFG_PBMTE) : (proc->get_state()->menvcfg->read() & MENVCFG_PBMTE);
@@ -745,12 +798,18 @@ reg_t mmu_t::walk(mem_access_info_t access_info)
       break;
     } else if (ss_page && ((type == STORE && !ss_access) || access_info.flags.clean_inval)) {
       // non-shadow-stack store or CBO with xwr = 010 causes access-fault
+      mmu_walk.excp_cause = CAUSE_STORE_ACCESS;
+      emit_mmu_walk();
       throw trap_store_access_fault(virt, addr, 0, 0);
     } else if (ss_page && type == FETCH) {
       // fetch from shadow stack pages cause instruction access-fault
+      mmu_walk.excp_cause = CAUSE_FETCH_ACCESS;
+      emit_mmu_walk();
       throw trap_instruction_access_fault(virt, addr, 0, 0);
     } else if ((((pte & PTE_R) && (pte & PTE_W)) || (pte & PTE_X)) && ss_access) {
       // shadow stack access cause store access fault if xwr!=010 and xwr!=001
+      mmu_walk.excp_cause = CAUSE_STORE_ACCESS;
+      emit_mmu_walk();
       throw trap_store_access_fault(virt, addr, 0, 0);
     } else if (type == FETCH || hlvx ? !(pte & PTE_X) :
                type == LOAD          ? !(sse && ss_page) && !(pte & PTE_R) && !(mxr && (pte & PTE_X)) :
@@ -779,10 +838,15 @@ reg_t mmu_t::walk(mem_access_info_t access_info)
                         | (vpn & ((reg_t(1) << napot_bits) - 1))
                         | (vpn & ((reg_t(1) << ptshift) - 1))) << PGSHIFT;
       reg_t phys = page_base | (addr & page_mask);
-      return s2xlate(addr, phys, type, type, virt, hlvx, false) & ~page_mask;
+      reg_t paddr = s2xlate(addr, phys, type, type, virt, hlvx, false);
+      mmu_walk.paddr = paddr;
+      emit_mmu_walk();
+      return paddr & ~page_mask;
     }
   }
 
+  mmu_walk.excp_cause = page_fault_cause_for(type);
+  emit_mmu_walk();
   throw_page_fault_exception(virt, addr, type);
 }
 

@@ -6,6 +6,8 @@
 #include "term.h"
 #include "sim.h"
 #include "dts.h"
+#include "runtime/runtime_context.h"
+#include "runtime/spike_device_observe_registry.h"
 
 #define UART_QUEUE_SIZE         64
 
@@ -160,6 +162,11 @@ uint8_t ns16550_t::rx_byte(void)
 void ns16550_t::tx_byte(uint8_t val)
 {
   lsr |= UART_LSR_TEMT | UART_LSR_THRE;
+  if (auto* runtime = spike_find_device_runtime_context(this)) {
+    if (auto* hook = runtime->hook_dispatcher()) {
+      hook->on_device_uart_tx(this, val);
+    }
+  }
   canonical_terminal_t::write(val);
 }
 

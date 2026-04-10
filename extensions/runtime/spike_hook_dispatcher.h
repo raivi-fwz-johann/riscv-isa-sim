@@ -7,6 +7,26 @@
 
 struct insn_fetch_t;
 class trap_t;
+class abstract_device_t;
+
+struct spike_mmu_xlate_flags_t {
+  bool forced_virt : 1 {false};
+  bool hlvx : 1 {false};
+  bool lr : 1 {false};
+  bool ss_access : 1 {false};
+  bool clean_inval : 1 {false};
+  bool enable_misalign : 1 {false};
+};
+
+struct spike_mmu_walk_observe_t {
+  uint32_t hart_id = 0;
+  reg_t vaddr = 0;
+  reg_t paddr = 0;
+  reg_t pte_paddr[5] = {0};
+  int8_t levels = -1;
+  reg_t excp_cause = 0;
+  spike_mmu_xlate_flags_t xf_log;
+};
 
 class spike_hook_dispatcher_t {
 public:
@@ -23,4 +43,6 @@ public:
   virtual bool on_exit(int) { return true; }
   virtual void on_exec_observe(insn_fetch_t*, reg_t, reg_t) {}
   virtual void on_fake_step(size_t, size_t) {}
+  virtual void on_device_uart_tx(abstract_device_t*, uint8_t) {}
+  virtual void on_mmu_walk(const spike_mmu_walk_observe_t&) {}
 };

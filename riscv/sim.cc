@@ -3,6 +3,7 @@
 #include "config.h"
 #include "dtb_discovery.h"
 #include "sim.h"
+#include "runtime/spike_device_observe_registry.h"
 #include "mmu.h"
 #include "runtime/spike_log_manager.h"
 #include "dts.h"
@@ -287,6 +288,8 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
 
 sim_t::~sim_t()
 {
+  for (const auto& dev : devices)
+    spike_unregister_device_runtime_context(dev.get());
   for (size_t i = 0; i < procs.size(); i++)
     delete procs[i];
   delete debug_mmu;
@@ -337,6 +340,7 @@ const char* sim_t::get_dts() {
 }
 void sim_t::add_device(reg_t addr, std::shared_ptr<abstract_device_t> dev) {
   bus.add_device(addr, dev.get());
+  spike_register_device_runtime_context(dev.get(), runtime_context());
   devices.push_back(dev);
 }
 
