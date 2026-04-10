@@ -15,7 +15,7 @@ public:
     FuncSimAdapter SimObj;
     SimObj.setFuncSim(new RawSpike());
     SimObj.init("spike --log-commits --dtb=./rv64_2cores.dtb "
-                "--priv=msu --misaligned "
+                "--priv=msu "
                 "/work/home/blqiu/riscv-tests/build/benchmarks/vvadd.riscv");
 
     SimObj.start();
