@@ -13,13 +13,14 @@
 #include "Memory.hpp"
 
 #include "sim.h"
-#include <cstdlib>
+#include <stdexcept>
 
 static void bad_address(const std::string& situation, reg_t addr)
 {
-  std::cerr << "Access exception occurred while " << situation << ":\n";
-  std::cerr << "Memory address 0x" << std::hex << addr << " is invalid\n";
-  std::exit(-1);
+  std::stringstream ss;
+  ss << "Access exception occurred while " << situation << ": "
+     << "memory address 0x" << std::hex << addr << " is invalid";
+  throw std::runtime_error(ss.str());
 }
 
 void run_helper_t::start(sim_t *spike_sim) {
