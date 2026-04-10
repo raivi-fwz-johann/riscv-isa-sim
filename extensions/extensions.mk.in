@@ -20,6 +20,7 @@ extensions_test_srcs = \
 	runtime/spike-log-manager.t.cc \
 	runtime/custom-dispatcher-inject.t.cc \
 	runtime/device-observe-registry.t.cc \
+	runtime/mmu-observe-dispatch.t.cc \
 	runtime/sim-hook-access.t.cc \
 	runtime/fetch-only-interface.t.cc \
 	runtime/spike-host-policy.t.cc \
