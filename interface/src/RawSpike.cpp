@@ -86,7 +86,7 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
   data.m_PPN2 = observed.paddr2;
   data.m_NPc = observed.npc == ERROR_PC_ADDR ? p->get_state()->pc : observed.npc;
   if (!observed.in_trap && data.m_Bits != 0) {
-    const auto inst_len = insn_t(data.m_Bits).length();
+    const auto inst_len = static_cast<uint64_t>(insn_t(data.m_Bits).length());
     const auto page0 = std::min<uint64_t>(inst_len, PGSIZE - (data.m_Pc % PGSIZE));
     if (page0 != inst_len) {
       try {
@@ -277,7 +277,11 @@ bool RawSpike::inWFI(uint32_t CId) const {
 }
 
 void RawSpike::setInterleave(size_t val) {
-  (void)val;
+  if (auto* runtime = m_Simulator->runtime_context()) {
+    if (auto* policy = runtime->step_policy()) {
+      policy->set_interleave(val);
+    }
+  }
 }
 
 void RawSpike::setLogCommits(bool LogCommits, bool IsFast, [[maybe_unused]]uint32_t cid) {
