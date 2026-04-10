@@ -3,7 +3,9 @@
 #include <sstream>
 
 #include "spike_init.h"
+#include "SpikeRoiState.hpp"
 #include "SpikeSimObjHooker.hpp"
+#include "SpikeStateExporter.hpp"
 #include "mmu.h"
 
 static Float128 toFloat128(float128_t val) {
@@ -28,6 +30,8 @@ void RawSpike::init(const std::string &ArgsStr) {
   m_Boot.reset();
   m_Simulator.reset();
   m_Cfg.reset();
+  m_StateExporter.reset();
+  m_RoiState.reset();
 
   int argc = static_cast<int>(Args.size());
   char **argv = new char *[argc+1];
@@ -39,7 +43,9 @@ void RawSpike::init(const std::string &ArgsStr) {
   m_Cfg = std::make_unique<cfg_t>();
   m_Boot = spike_init(argc, argv, TmpSim, *m_Cfg, [this](sim_t *s) {
     std::cout << "Processor count: " << s->nprocs() << std::endl;
-    m_Shadow = std::vector<RawSpikeShadowState>(s->nprocs());
+    m_StateExporter = std::make_unique<spike_state_exporter_t>();
+    m_StateExporter->reset(s->nprocs());
+    m_RoiState = std::make_unique<spike_roi_state_t>();
     s->runtime_context()->set_hook_dispatcher(std::make_unique<SpikeSimObjHooker>(this));
   });
   (void)TmpSim;
@@ -66,13 +72,16 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
   if (!inROI(CId)) {
     return 1;
   }
-  if (CId >= m_Shadow.size()) {
+  if (!m_StateExporter) {
     return -1;
   }
 
   auto p = m_Simulator->get_core(CId);
-  auto &shadow = m_Shadow[CId];
-  auto &observed = shadow.observed;
+  auto* snapshot = m_StateExporter->snapshot(CId);
+  if (!snapshot) {
+    return -1;
+  }
+  auto observed = snapshot->observed;
   if (!observed.valid) {
     return -1;
   }
@@ -102,10 +111,12 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
     data.has_tval2_ = observed.has_tval2;
     data.tval2_ = observed.tval2;
   }
-  shadow.mmu_trace = {};
-  shadow.mmu_trace.paddr = observed.paddr;
-  if (observed.in_trap) {
-    shadow.mmu_trace.excp_cause = observed.cause;
+  data.m_mmuTrace = m_StateExporter->get_mmu_trace(CId);
+  if (data.m_mmuTrace.paddr == 0 && observed.paddr != ERROR_PC_ADDR) {
+    data.m_mmuTrace.paddr = observed.paddr;
+  }
+  if (observed.in_trap && data.m_mmuTrace.excp_cause == 0) {
+    data.m_mmuTrace.excp_cause = observed.cause;
   }
 
 #if defined (FULL_TRACE) || defined (MEM_TRACE)
@@ -130,7 +141,7 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
       }
     }
     data.m_MemRs.emplace_back(std::get<0>(item), std::get<2>(item), std::get<1>(item), paddr, paddr2);
-    shadow.mmu_trace.paddr = paddr;
+    data.m_mmuTrace.paddr = paddr;
   }
   for (auto &item : p->get_state()->log_mem_write) {
     uint64_t paddr = 0;
@@ -149,12 +160,12 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
       }
     }
     data.m_MemWs.emplace_back(std::get<0>(item), std::get<2>(item), std::get<1>(item), paddr, paddr2);
-    shadow.mmu_trace.paddr = paddr;
+    data.m_mmuTrace.paddr = paddr;
   }
   }
 #endif
 
-  observed.reset();
+  m_StateExporter->reset_observed(CId);
 
 #if defined (FULL_TRACE)
   auto state = p->get_state();
@@ -235,8 +246,8 @@ InstTrace RawSpike::fetchInstOnly(uint64_t Pc, uint32_t CId, uint64_t IId) {
 uint64_t RawSpike::vaddr2paddr(uint64_t vaddr, uint32_t CId) {
   try {
     auto paddr = m_Simulator->get_core(CId)->get_mmu()->vaddr2paddr(vaddr);
-    if (CId < m_Shadow.size()) {
-      m_Shadow[CId].mmu_trace.paddr = paddr;
+    if (m_StateExporter) {
+      m_StateExporter->set_mmu_paddr(CId, paddr);
     }
     return paddr;
   } catch (...) {
@@ -246,19 +257,18 @@ uint64_t RawSpike::vaddr2paddr(uint64_t vaddr, uint32_t CId) {
 
 MmuTrace RawSpike::getMmuTrace(uint32_t CId)
 {
-    if (CId >= m_Shadow.size()) {
-      return {};
-    }
-    return m_Shadow[CId].mmu_trace;
+    return m_StateExporter ? m_StateExporter->get_mmu_trace(CId) : MmuTrace{};
 }
 
 bool RawSpike::inROI(uint32_t cid) const {
   (void)cid;
-  return true;
+  return !m_RoiState || m_RoiState->in_roi();
 }
 
 void RawSpike::setupROI(bool val) {
-  m_ROIOn = val;
+  if (m_RoiState) {
+    m_RoiState->set_enabled(val);
+  }
 }
 
 size_t RawSpike::nproc() const { return m_Simulator->nprocs(); }
@@ -266,10 +276,7 @@ size_t RawSpike::nproc() const { return m_Simulator->nprocs(); }
 uint64_t RawSpike::getCurrPc(uint32_t cid) const { return m_Simulator->get_core(cid)->get_state()->pc; }
 
 bool RawSpike::inTrap(uint32_t CId) const {
-  if (CId >= m_Shadow.size()) {
-    return false;
-  }
-  return m_Shadow[CId].observed.in_trap;
+  return m_StateExporter && m_StateExporter->in_trap(CId);
 }
 
 bool RawSpike::inWFI(uint32_t CId) const {

@@ -35,6 +35,14 @@ int main()
 
   hook.on_exec_observe(nullptr, 0x1000, 0x1004);
   hook.on_fake_step(1, 1);
+  hook.on_device_uart_tx(nullptr, 0x41);
+
+  spike_mmu_walk_observe_t mmu_walk;
+  mmu_walk.hart_id = 0;
+  mmu_walk.vaddr = 0x1000;
+  mmu_walk.paddr = 0x2000;
+  mmu_walk.levels = 3;
+  hook.on_mmu_walk(mmu_walk);
 
   return 0;
 }

@@ -16,6 +16,8 @@
 #include "decode_macros.h"
 
 #include "RawSpike.hpp"
+#include "SpikeRoiState.hpp"
+#include "SpikeStateExporter.hpp"
 
 SpikeSimObjHooker::SpikeSimObjHooker(RawSpike *Ptr) : m_SimObj(Ptr) {}
 
@@ -26,29 +28,26 @@ bool SpikeSimObjHooker::on_exit(int code) {
 }
 
 void SpikeSimObjHooker::on_exec_observe(insn_fetch_t* in, reg_t pc, reg_t npc) {
-  auto& observed = m_SimObj->m_Shadow.at(m_SimObj->m_CurrCId).observed;
-  observed.valid = true;
-  observed.in_trap = false;
-  observed.pc = pc;
-  observed.bits = in ? in->insn.bits() : 0;
-  observed.paddr = in ? in->pc_ppn : ERROR_PC_ADDR;
-  observed.paddr2 = ERROR_PC_ADDR;
-  if (npc != 0 && npc != PC_SERIALIZE_BEFORE) {
-    observed.npc = npc;
+  if (m_SimObj->m_StateExporter) {
+    m_SimObj->m_StateExporter->observe_exec(m_SimObj->m_CurrCId, in, pc, npc);
   }
 }
 
 reg_t SpikeSimObjHooker::on_trap(void *in, reg_t pc, trap_t &t) {
-  auto& observed = m_SimObj->m_Shadow.at(m_SimObj->m_CurrCId).observed;
-  observed.valid = true;
-  observed.in_trap = true;
-  observed.pc = pc;
-  observed.bits = in ? static_cast<insn_fetch_t*>(in)->insn.bits() : 0;
-  observed.paddr = in ? static_cast<insn_fetch_t*>(in)->pc_ppn : ERROR_PC_ADDR;
-  observed.paddr2 = ERROR_PC_ADDR;
-  observed.cause = t.cause();
-  observed.tval = t.get_tval();
-  observed.has_tval2 = t.has_tval2();
-  observed.tval2 = observed.has_tval2 ? t.get_tval2() : 0;
+  if (m_SimObj->m_StateExporter) {
+    return m_SimObj->m_StateExporter->observe_trap(m_SimObj->m_CurrCId, in, pc, t);
+  }
   return 0;
+}
+
+void SpikeSimObjHooker::on_device_uart_tx(abstract_device_t* device, uint8_t byte) {
+  if (m_SimObj->m_RoiState) {
+    m_SimObj->m_RoiState->on_device_uart_tx(device, byte);
+  }
+}
+
+void SpikeSimObjHooker::on_mmu_walk(const spike_mmu_walk_observe_t& event) {
+  if (m_SimObj->m_StateExporter) {
+    m_SimObj->m_StateExporter->observe_mmu_walk(event);
+  }
 }

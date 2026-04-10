@@ -3,16 +3,16 @@
 #include "RawSim.hpp"
 
 #include "Memory.hpp"
-#include "RawSpikeShadowState.hpp"
 #include "run_helper.h"
-#include <optional>
-#include <vector>
+#include <memory>
 
 class sim_t;
 class cfg_t;
 struct spike_boot_result_t;
 struct xlate_flags_t;
 struct mmu_trace_t;
+class spike_state_exporter_t;
+class spike_roi_state_t;
 
 class RawSpike : public RawSim {
 public:
@@ -44,10 +44,10 @@ private:
   std::unique_ptr<spike_boot_result_t> m_Boot;
   std::unique_ptr<sim_t> m_Simulator;
   std::unique_ptr<cfg_t> m_Cfg;
-  std::vector<RawSpikeShadowState> m_Shadow;
+  std::unique_ptr<spike_state_exporter_t> m_StateExporter;
+  std::unique_ptr<spike_roi_state_t> m_RoiState;
 
   run_helper_t m_RunHelper;
-  bool m_ROIOn = false;
   bool m_LogMem = true;
   size_t m_CurrCId = 0;
 
