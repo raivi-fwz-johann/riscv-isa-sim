@@ -277,11 +277,7 @@ bool RawSpike::inWFI(uint32_t CId) const {
 }
 
 void RawSpike::setInterleave(size_t val) {
-  if (auto* runtime = m_Simulator->runtime_context()) {
-    if (auto* policy = runtime->step_policy()) {
-      policy->set_interleave(val);
-    }
-  }
+  m_Simulator->set_interleave(val);
 }
 
 void RawSpike::setLogCommits(bool LogCommits, bool IsFast, [[maybe_unused]]uint32_t cid) {

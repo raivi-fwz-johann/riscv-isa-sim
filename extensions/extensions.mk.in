@@ -5,14 +5,12 @@ extensions_install_hdrs = \
 	runtime/runtime_context.h \
 	runtime/spike_host_policy.h \
 	runtime/spike_log_manager.h \
-	runtime/spike_step_policy.h \
 	integration/spike_bootstrap.h \
 
 extensions_srcs = \
 	runtime/runtime_context.cc \
 	runtime/spike_host_policy.cc \
 	runtime/spike_log_manager.cc \
-	runtime/spike_step_policy.cc \
 	integration/spike_bootstrap.cc \
 
 extensions_test_srcs = \
@@ -22,5 +20,4 @@ extensions_test_srcs = \
 	runtime/sim-hook-access.t.cc \
 	runtime/fetch-only-interface.t.cc \
 	runtime/spike-host-policy.t.cc \
-	runtime/step-policy.t.cc \
 	integration/spike-bootstrap-api.t.cc \

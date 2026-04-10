@@ -417,7 +417,7 @@ void sim_t::interactive_run(const std::string& cmd, const std::vector<std::strin
   size_t steps = args.size() ? atoll(args[0].c_str()) : -1;
   set_procs_debug(noisy);
 
-  const size_t actual_steps = std::min(INTERLEAVE, steps);
+  const size_t actual_steps = std::min(this->INTERLEAVE, steps);
   for (size_t i = 0; i < actual_steps && !ctrlc_pressed && !done(); i++)
     step(1);
 
@@ -791,7 +791,7 @@ void sim_t::interactive_until(const std::string& cmd, const std::vector<std::str
   if (func == NULL)
     throw trap_interactive();
 
-  for (size_t i = 0; i < INTERLEAVE; i++)
+  for (size_t i = 0; i < this->INTERLEAVE; i++)
   {
     try
     {
