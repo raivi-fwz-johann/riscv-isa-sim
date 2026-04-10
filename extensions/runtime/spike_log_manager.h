@@ -3,6 +3,7 @@
 struct spike_log_config_t {
   bool enable_commit_log_stant = false;
   bool enable_fast_commit_log = false;
+  bool enable_fast_mem_log = false;
 };
 
 class spike_log_manager_t {
@@ -15,6 +16,9 @@ public:
 
   bool enable_fast_commit_log() const { return config_.enable_fast_commit_log; }
   void set_enable_fast_commit_log(bool value) { config_.enable_fast_commit_log = value; }
+
+  bool enable_fast_mem_log() const { return config_.enable_fast_mem_log; }
+  void set_enable_fast_mem_log(bool value) { config_.enable_fast_mem_log = value; }
 
 private:
   spike_log_config_t config_;

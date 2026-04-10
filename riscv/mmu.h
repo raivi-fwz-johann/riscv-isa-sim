@@ -107,6 +107,7 @@ public:
   template<typename T>
   T ALWAYS_INLINE load(reg_t addr, xlate_flags_t xlate_flags = {}) {
     target_endian<T> res;
+    bool used_slow_path = false;
     if (auto* hook = hook_dispatcher()) {
       if (!hook->should_continue()) {
         target_endian<T> zero{};
@@ -119,10 +120,13 @@ public:
     if (likely(!xlate_flags.is_special_access() && aligned && tlb_hit)) {
       res = *(target_endian<T>*)host_addr;
     } else {
+      used_slow_path = true;
       load_slow_path(addr, sizeof(T), (uint8_t*)&res, xlate_flags);
     }
 
     MMU_OBSERVE_LOAD(addr,from_target(res),sizeof(T));
+    if (!used_slow_path && unlikely(mem_log_active()))
+      proc->state.log_mem_read.push_back(std::make_tuple(addr, reg_t(from_target(res)), uint8_t(sizeof(T))));
 
     return from_target(res);
   }
@@ -154,6 +158,7 @@ public:
   void ALWAYS_INLINE store(reg_t addr, T val, xlate_flags_t xlate_flags = {}) {
     MMU_OBSERVE_STORE(addr, val, sizeof(T));
     auto* hook = hook_dispatcher();
+    bool used_slow_path = false;
     std::shared_ptr<bool> real_store;
     if (hook) {
       if (!hook->should_continue()) {
@@ -170,12 +175,15 @@ public:
     if (!xlate_flags.is_special_access() && likely(aligned && tlb_hit)) {
       *(target_endian<T>*)host_addr = to_target(val);
     } else {
+      used_slow_path = true;
       target_endian<T> target_val = to_target(val);
       store_slow_path(addr, sizeof(T), (const uint8_t*)&target_val, xlate_flags, true, false);
     }
     if (real_store) {
       *real_store = true;
     }
+    if (!used_slow_path && unlikely(mem_log_active()))
+      proc->state.log_mem_write.push_back(std::make_tuple(addr, reg_t(val), uint8_t(sizeof(T))));
   }
 
   template<typename T>
@@ -436,6 +444,14 @@ private:
 
     auto* manager = log_manager();
     return proc->get_log_commits_enabled() || (manager && manager->enable_commit_log_stant());
+  }
+  bool mem_log_active() const {
+    if (!proc) {
+      return false;
+    }
+
+    auto* manager = log_manager();
+    return proc->get_log_commits_enabled() || (manager && manager->enable_fast_mem_log());
   }
   memtracer_list_t tracer;
   reg_t load_reservation_address;

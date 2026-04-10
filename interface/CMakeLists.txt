@@ -51,7 +51,7 @@ add_custom_command(
   COMMAND ${ee} sh ../configure LDFLAGS="-static-libstdc++" --prefix=${SPIKE_INSTALL_DIR} --without-boost --without-boost-asio --without-boost-regex > /dev/null
   COMMAND ${CMAKE_COMMAND} -E make_directory ${SPIKE_BUILD_DIR}/runtime ${SPIKE_BUILD_DIR}/integration
   COMMAND ${ee} make -j4 > make.log 2>&1
-  COMMAND ${ee} make -j4 install > /dev/null
+  COMMAND ${ee} make install > /dev/null
   WORKING_DIRECTORY ${SPIKE_BUILD_DIR}
   DEPENDS ${SPIKE_SOURCES}
 )
@@ -61,7 +61,7 @@ add_custom_command(
   COMMAND ${ee} sh ../configure --prefix=${SPIKE_INSTALL_DIR} --without-boost --without-boost-asio --without-boost-regex > /dev/null
   COMMAND ${CMAKE_COMMAND} -E make_directory ${SPIKE_BUILD_DIR}/runtime ${SPIKE_BUILD_DIR}/integration
   COMMAND ${ee} make -j4 > make.log 2>&1
-  COMMAND ${ee} make -j4 install > /dev/null
+  COMMAND ${ee} make install > /dev/null
   WORKING_DIRECTORY ${SPIKE_BUILD_DIR}
   DEPENDS ${SPIKE_SOURCES}
 )
@@ -72,6 +72,11 @@ file(GLOB_RECURSE SPIKE_INTERFACE_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
 add_library(spikeInterface_V2 SHARED
   ${SPIKE_INTERFACE_SRCS}
+)
+set_target_properties(spikeInterface_V2 PROPERTIES
+  LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+  ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 add_dependencies(spikeInterface_V2 spike)
 target_include_directories(spikeInterface_V2 PUBLIC
