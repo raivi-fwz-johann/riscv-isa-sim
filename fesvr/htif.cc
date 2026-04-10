@@ -295,6 +295,11 @@ int htif_t::run()
       idle();
   }
 
+  if (host_disabled()) {
+    while (!should_exit())
+      idle();
+  }
+
   while (!should_exit())
   {
     uint64_t tohost;

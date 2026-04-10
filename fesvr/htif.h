@@ -33,6 +33,7 @@ class htif_t : public chunked_memif_t
   void set_expected_xlen(unsigned int m) { expected_xlen = m; }
   virtual memif_t& memif() { return mem; }
   device_list_t& get_devices() { return device_list; }
+  virtual bool host_disabled() const { return false; }
 
   template<typename T> inline T from_target(target_endian<T> n) const
   {
