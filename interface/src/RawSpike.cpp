@@ -1,0 +1,248 @@
+#include "RawSpike.hpp"
+
+#include <sstream>
+
+#include "spike_init.h"
+#include "SpikeSimObjHooker.hpp"
+#include "mmu.h"
+
+static Float128 toFloat128(float128_t val) {
+  Float128 res;
+  res.v[0] = val.v[0];
+  res.v[1] = val.v[1];
+  return res;
+}
+
+RawSpike::RawSpike() {}
+
+RawSpike::~RawSpike() {}
+
+void RawSpike::init(const std::string &ArgsStr) {
+  std::vector<std::string> Args;
+  std::stringstream ss(ArgsStr);
+  std::string word;
+  while (ss >> word) {
+    Args.push_back(word);
+  }
+
+  m_Boot.reset();
+  m_Simulator.reset();
+  m_Cfg.reset();
+
+  int argc = static_cast<int>(Args.size());
+  char **argv = new char *[argc+1];
+  for (int i = 0; i < argc; ++i) {
+    argv[i] = const_cast<char *>(Args[i].c_str());
+  }
+  argv[argc] = nullptr;
+  sim_t *TmpSim = nullptr;
+  m_Cfg = std::make_unique<cfg_t>();
+  m_Boot = spike_init(argc, argv, TmpSim, *m_Cfg, [this](sim_t *s) {
+    std::cout << "Processor count: " << s->nprocs() << std::endl;
+    m_Observed = std::vector<ObservedInsn>(s->nprocs());
+    s->runtime_context()->set_hook_dispatcher(std::make_unique<SpikeSimObjHooker>(this));
+  });
+  (void)TmpSim;
+  m_Simulator = std::move(m_Boot->sim);
+  delete[] argv;
+}
+
+void RawSpike::start() {
+  m_RunHelper.start(m_Simulator.get());
+}
+
+void RawSpike::stop() {
+  m_RunHelper.stop(m_Simulator.get());
+}
+
+bool RawSpike::done() const { return m_Simulator->done(); }
+
+size_t RawSpike::step(size_t n, uint32_t CId) {
+  m_CurrCId = CId;
+  return m_RunHelper.step(m_Simulator.get(), n, CId);
+}
+
+int RawSpike::record(InstTrace &data, uint32_t CId) {
+  if (!inROI(CId)) {
+    return 1;
+  }
+  if (CId >= m_Observed.size()) {
+    return -1;
+  }
+
+  auto p = m_Simulator->get_core(CId);
+  auto &observed = m_Observed[CId];
+  if (!observed.valid) {
+    return -1;
+  }
+
+  data.m_InTrap = observed.in_trap;
+  data.m_InWFI = inWFI(CId);
+
+  data.m_Pc = observed.pc;
+  data.m_Bits = observed.bits;
+  data.m_PPN = observed.paddr;
+  data.m_PPN2 = observed.paddr2;
+  data.m_NPc = observed.npc == ERROR_PC_ADDR ? p->get_state()->pc : observed.npc;
+  if (observed.in_trap) {
+    data.cause_ = observed.cause;
+    data.tval_ = observed.tval;
+    data.has_tval2_ = observed.has_tval2;
+    data.tval2_ = observed.tval2;
+  }
+  observed.reset();
+
+#if defined (FULL_TRACE) || defined (MEM_TRACE)
+  // parse log_mem_read
+  data.m_MemRs.clear();
+  for (auto &item : p->get_state()->log_mem_read) {
+    uint64_t paddr = 0;
+    try {
+      paddr = p->get_mmu()->vaddr2paddr(std::get<0>(item), std::get<2>(item), LOAD);
+    } catch (...) {
+      paddr = 0;
+    }
+    data.m_MemRs.emplace_back(std::get<0>(item), paddr, std::get<2>(item), std::get<1>(item));
+  }
+  data.m_MemWs.clear();
+  for (auto &item : p->get_state()->log_mem_write) {
+    uint64_t paddr = 0;
+    try {
+      paddr = p->get_mmu()->vaddr2paddr(std::get<0>(item), std::get<2>(item), STORE);
+    } catch (...) {
+      paddr = 0;
+    }
+    data.m_MemWs.emplace_back(std::get<0>(item), paddr, std::get<2>(item), std::get<1>(item));
+  }
+#endif
+
+#if defined (FULL_TRACE)
+  auto state = p->get_state();
+  int xlen = state->last_inst_xlen;
+  int flen = state->last_inst_flen;
+
+  // parse log_reg_write
+  {
+    for (auto &item : state->log_reg_write) {
+      if (item.first == 0) continue;
+
+      int size = 0;
+      int rd = item.first >> 4;
+      bool is_vec = false;
+      bool is_vreg = false;
+      switch (item.first & 0xf) {
+        case 0:
+          size = xlen;
+          break;
+        case 1:
+          size = flen;
+          break;
+        case 2:
+          size = p->VU.VLEN;
+          is_vreg = true;
+          break;
+        case 3:
+          is_vec = true;
+          break;
+        case 4:
+          size = xlen;
+          break;
+        default:
+          assert("can't been here" && 0);
+          break;
+      }
+
+      if (!is_vec) {
+        size_t bytes = size / 8;
+
+        if (is_vreg) {
+          // malloc mem for reg value
+          char *value = new char[bytes];
+          memcpy(value, &p->VU.elt<uint8_t>(rd, 0), bytes);
+          data.m_RegWs.emplace_back(item.first, toFloat128(item.second), std::move(value), bytes);
+        } else {
+          data.m_RegWs.emplace_back(item.first, toFloat128(item.second), nullptr, bytes);
+        }
+      }
+    }
+  }
+
+  data.m_LastInstPriv = state->last_inst_priv;
+  data.m_LastInstXLen = state->last_inst_xlen;
+  data.m_LastInstFLen = state->last_inst_flen;
+
+  auto satp = p->get_state()->satp->read();
+  data.satp_ = satp;
+  data.m_Asid = get_field(satp, xlen == 32 ? SATP32_ASID : SATP64_ASID);
+
+  data.m_Status = {p->get_state()->prv, p->get_state()->v,
+              p->get_state()->debug_mode,
+              p->get_csr(0x300)};
+#endif
+
+  return 0;
+}
+
+InstTrace RawSpike::fetchInstOnly(uint64_t Pc, uint32_t CId, uint64_t IId) {
+  try {
+    auto insn = m_Simulator->get_core(CId)->get_mmu()->ext_fetch_insn(Pc);
+    return InstTrace(IId, Pc, insn.insn.bits(), insn.pc_ppn);
+  } catch (...) {
+    return InstTrace(IId, Pc);
+  }
+}
+
+uint64_t RawSpike::vaddr2paddr(uint64_t vaddr, uint32_t CId) {
+  try {
+    return m_Simulator->get_core(CId)->get_mmu()->vaddr2paddr(vaddr);
+  } catch (...) {
+    return vaddr;
+  }
+}
+
+MmuTrace RawSpike::getMmuTrace(uint32_t CId)
+{
+    (void)CId;
+    return {};
+}
+
+bool RawSpike::inROI(uint32_t cid) const {
+  (void)cid;
+  return true;
+}
+
+void RawSpike::setupROI(bool val) {
+  m_ROIOn = val;
+}
+
+size_t RawSpike::nproc() const { return m_Simulator->nprocs(); }
+
+uint64_t RawSpike::getCurrPc(uint32_t cid) const { return m_Simulator->get_core(cid)->get_state()->pc; }
+
+bool RawSpike::inTrap(uint32_t CId) const {
+  if (CId >= m_Observed.size()) {
+    return false;
+  }
+  return m_Observed[CId].in_trap;
+}
+
+bool RawSpike::inWFI(uint32_t CId) const {
+  return m_Simulator->get_core(CId)->is_waiting_for_interrupt();
+}
+
+void RawSpike::setInterleave(size_t val) {
+  (void)val;
+}
+
+void RawSpike::setLogCommits(bool LogCommits, bool IsFast, [[maybe_unused]]uint32_t cid) {
+  m_Simulator->configure_log(false, LogCommits && !IsFast);
+  if (auto* runtime = m_Simulator->runtime_context()) {
+    if (auto* manager = runtime->log_manager()) {
+      manager->set_enable_fast_commit_log(IsFast);
+    }
+  }
+}
+
+void RawSpike::setLogMem(bool val) {
+  (void)val;
+}

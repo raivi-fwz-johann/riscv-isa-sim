@@ -443,11 +443,9 @@ void processor_t::take_trap(trap_t& t, reg_t epc)
     fetch.insn = insn_t(0x1);
   }
 
-  if (commits_log_active(this)) {
-    if (auto* hook = get_hook_dispatcher(this)) {
-      if (hook->on_trap(&fetch, epc, t) != 0) {
-        return;
-      }
+  if (auto* hook = get_hook_dispatcher(this)) {
+    if (hook->on_trap(&fetch, epc, t) != 0) {
+      return;
     }
   }
 

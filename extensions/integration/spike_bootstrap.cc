@@ -464,13 +464,14 @@ spike_boot_result_t spike_bootstrap(
   spike_prepare_boot_options(options);
 
   spike_boot_result_t result;
+  result.cfg = std::make_unique<cfg_t>(options.cfg);
   result.ic = std::move(options.ic);
   result.dc = std::move(options.dc);
   result.l2 = std::move(options.l2);
-  result.mems = make_mems(options.cfg.mem_layout);
+  result.mems = make_mems(result.cfg->mem_layout);
 
   if (options.kernel && check_file_exists(options.kernel)) {
-    const char* isa = options.cfg.isa;
+    const char* isa = result.cfg->isa;
     const reg_t kernel_size = get_file_size(options.kernel);
     const reg_t kernel_offset = (isa[2] == '6' && isa[3] == '4') ? 0x200000 : 0x400000;
     for (auto& mem : result.mems) {
@@ -487,7 +488,7 @@ spike_boot_result_t spike_bootstrap(
       if (initrd_size && (initrd_size + 0x1000) < mem.second->size()) {
         reg_t initrd_end = mem.first + mem.second->size() - 0x1000;
         reg_t initrd_start = initrd_end - initrd_size;
-        options.cfg.initrd_bounds = std::make_pair(initrd_start, initrd_end);
+        result.cfg->initrd_bounds = std::make_pair(initrd_start, initrd_end);
         read_file_bytes(options.initrd, 0, mem.second, initrd_start - mem.first, initrd_size);
         break;
       }
@@ -495,7 +496,7 @@ spike_boot_result_t spike_bootstrap(
   }
 
   result.sim = std::make_unique<sim_t>(
-      &options.cfg,
+      result.cfg.get(),
       options.halted,
       result.mems,
       options.plugin_device_factories,
@@ -527,7 +528,7 @@ spike_boot_result_t spike_bootstrap(
   if (result.dc)
     result.dc->set_log(options.log_cache);
 
-  for (size_t i = 0; i < options.cfg.nprocs(); ++i) {
+  for (size_t i = 0; i < result.cfg->nprocs(); ++i) {
     if (result.ic)
       result.sim->get_core(i)->get_mmu()->register_memtracer(result.ic.get());
     if (result.dc)
