@@ -110,6 +110,9 @@ void spike_state_exporter_t::set_mmu_paddr(size_t hart_id, uint64_t paddr)
     return;
   }
 
+  core->pending_mmu_trace = {};
+  core->has_pending_mmu_trace = false;
+  core->snapshot.mmu_trace = {};
   core->snapshot.mmu_trace.paddr = paddr;
 }
 
