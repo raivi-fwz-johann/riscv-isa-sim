@@ -235,9 +235,12 @@ static inline reg_t execute_insn_fast(processor_t* p, reg_t pc, insn_fetch_t fet
 
   reg_t npc = fetch.func(p, fetch.insn, pc);
 
+  if (auto* hook = get_hook_dispatcher(p)) {
+      hook->on_exec_observe(&fetch, pc, npc);
+  }
+
   if (fast_commit_log) {
     if (auto* hook = get_hook_dispatcher(p)) {
-      hook->on_exec_observe(&fetch, pc, 0);
       hook->on_commit();
     }
   }
@@ -254,10 +257,12 @@ static inline reg_t execute_insn_logged(processor_t* p, reg_t pc, insn_fetch_t f
 
   try {
     npc = fetch.func(p, fetch.insn, pc);
+    if (auto* hook = get_hook_dispatcher(p)) {
+      hook->on_exec_observe(&fetch, pc, npc);
+    }
     if (commits_log_active(p)) {
       if (auto* hook = get_hook_dispatcher(p)) {
         hook->on_decode(&fetch, pc, npc);
-        hook->on_exec_observe(&fetch, pc, npc);
       }
     }
     if (npc != PC_SERIALIZE_BEFORE) {

@@ -45,6 +45,7 @@ public:
   int run();
   void set_debug(bool value);
   void set_histogram(bool value);
+  size_t idle_ext(size_t n, size_t proc);
   void add_device(reg_t addr, std::shared_ptr<abstract_device_t> dev);
 
   // Configure logging

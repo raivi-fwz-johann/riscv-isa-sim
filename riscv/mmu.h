@@ -372,6 +372,16 @@ public:
     return load_insn(addr);
   }
 
+  inline uint64_t vaddr2paddr(uint64_t vaddr)
+  {
+    return translate(generate_access_info(vaddr, LOAD, {}), 1);
+  }
+
+  inline uint64_t vaddr2paddr(uint64_t vaddr, size_t len, access_type type)
+  {
+    return translate(generate_access_info(vaddr, type, {}), len);
+  }
+
   std::tuple<bool, uintptr_t, reg_t> ALWAYS_INLINE access_tlb(const dtlb_entry_t* tlb, reg_t vaddr, reg_t allowed_flags = 0, reg_t required_flags = 0)
   {
     auto vpn = vaddr / PGSIZE, pgoff = vaddr % PGSIZE;

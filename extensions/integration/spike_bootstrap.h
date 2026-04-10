@@ -45,6 +45,7 @@ struct spike_boot_options_t {
 };
 
 struct spike_boot_result_t {
+  std::unique_ptr<cfg_t> cfg;
   std::unique_ptr<sim_t> sim;
   std::vector<std::pair<reg_t, abstract_mem_t*>> mems;
   std::unique_ptr<icache_sim_t> ic;

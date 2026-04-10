@@ -346,6 +346,16 @@ void sim_t::set_debug(bool value)
   debug = value;
 }
 
+size_t sim_t::idle_ext(size_t n, size_t proc)
+{
+  if (done() || proc >= procs.size())
+    return 0;
+
+  current_proc = proc;
+  step(n);
+  return n;
+}
+
 void sim_t::set_histogram(bool value)
 {
   histogram_enabled = value;
