@@ -26,7 +26,7 @@ bool SpikeSimObjHooker::on_exit(int code) {
 }
 
 void SpikeSimObjHooker::on_exec_observe(insn_fetch_t* in, reg_t pc, reg_t npc) {
-  auto& observed = m_SimObj->m_Observed.at(m_SimObj->m_CurrCId);
+  auto& observed = m_SimObj->m_Shadow.at(m_SimObj->m_CurrCId).observed;
   observed.valid = true;
   observed.in_trap = false;
   observed.pc = pc;
@@ -39,7 +39,7 @@ void SpikeSimObjHooker::on_exec_observe(insn_fetch_t* in, reg_t pc, reg_t npc) {
 }
 
 reg_t SpikeSimObjHooker::on_trap(void *in, reg_t pc, trap_t &t) {
-  auto& observed = m_SimObj->m_Observed.at(m_SimObj->m_CurrCId);
+  auto& observed = m_SimObj->m_Shadow.at(m_SimObj->m_CurrCId).observed;
   observed.valid = true;
   observed.in_trap = true;
   observed.pc = pc;
