@@ -8,7 +8,7 @@ class abstract_device_t;
 
 class spike_roi_state_t {
 public:
-  void set_enabled(bool enabled) { enabled_ = enabled; }
+  void set_enabled(bool enabled);
   bool enabled() const { return enabled_; }
   bool in_roi() const { return !enabled_ || (roi_begin_ && !roi_end_); }
 
@@ -16,6 +16,7 @@ public:
 
 private:
   bool advance_match(size_t& matched, uint8_t byte);
+  void reset_state();
 
   const std::string marker_ = "CURR_MINSTRET";
   bool enabled_ = false;

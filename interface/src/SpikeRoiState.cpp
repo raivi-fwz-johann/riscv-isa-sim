@@ -1,5 +1,15 @@
 #include "SpikeRoiState.hpp"
 
+void spike_roi_state_t::set_enabled(bool enabled)
+{
+  if (enabled_ == enabled) {
+    return;
+  }
+
+  enabled_ = enabled;
+  reset_state();
+}
+
 void spike_roi_state_t::on_device_uart_tx(
     abstract_device_t* device,
     uint8_t byte)
@@ -34,4 +44,12 @@ bool spike_roi_state_t::advance_match(size_t& matched, uint8_t byte)
 
   matched = byte == static_cast<uint8_t>(marker_[0]) ? 1 : 0;
   return false;
+}
+
+void spike_roi_state_t::reset_state()
+{
+  roi_begin_ = false;
+  roi_end_ = false;
+  roi_begin_matched_ = 0;
+  roi_end_matched_ = 0;
 }
