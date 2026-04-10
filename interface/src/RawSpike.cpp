@@ -85,6 +85,17 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
   data.m_PPN = observed.paddr;
   data.m_PPN2 = observed.paddr2;
   data.m_NPc = observed.npc == ERROR_PC_ADDR ? p->get_state()->pc : observed.npc;
+  if (!observed.in_trap && data.m_Bits != 0) {
+    const auto inst_len = insn_t(data.m_Bits).length();
+    const auto page0 = std::min<uint64_t>(inst_len, PGSIZE - (data.m_Pc % PGSIZE));
+    if (page0 != inst_len) {
+      try {
+        data.m_PPN2 = p->get_mmu()->vaddr2paddr(data.m_Pc + page0, 1, FETCH);
+      } catch (...) {
+        data.m_PPN2 = ERROR_PC_ADDR;
+      }
+    }
+  }
   if (observed.in_trap) {
     data.cause_ = observed.cause;
     data.tval_ = observed.tval;
@@ -104,24 +115,42 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
   if (m_LogMem) {
     for (auto &item : p->get_state()->log_mem_read) {
       uint64_t paddr = 0;
-      try {
-        paddr = p->get_mmu()->vaddr2paddr(std::get<0>(item), std::get<2>(item), LOAD);
-      } catch (...) {
-        paddr = 0;
-      }
-      data.m_MemRs.emplace_back(std::get<0>(item), paddr, std::get<2>(item), std::get<1>(item));
-      shadow.mmu_trace.paddr = paddr;
+    try {
+      paddr = p->get_mmu()->vaddr2paddr(std::get<0>(item), std::get<2>(item), LOAD);
+    } catch (...) {
+      paddr = 0;
     }
-    for (auto &item : p->get_state()->log_mem_write) {
-      uint64_t paddr = 0;
+    uint64_t paddr2 = paddr;
+    const auto page0 = std::min<uint64_t>(std::get<2>(item), PGSIZE - (std::get<0>(item) % PGSIZE));
+    if (page0 != std::get<2>(item)) {
       try {
-        paddr = p->get_mmu()->vaddr2paddr(std::get<0>(item), std::get<2>(item), STORE);
+        paddr2 = p->get_mmu()->vaddr2paddr(std::get<0>(item) + page0, std::get<2>(item) - page0, LOAD);
       } catch (...) {
-        paddr = 0;
+        paddr2 = paddr;
       }
-      data.m_MemWs.emplace_back(std::get<0>(item), paddr, std::get<2>(item), std::get<1>(item));
-      shadow.mmu_trace.paddr = paddr;
     }
+    data.m_MemRs.emplace_back(std::get<0>(item), std::get<2>(item), std::get<1>(item), paddr, paddr2);
+    shadow.mmu_trace.paddr = paddr;
+  }
+  for (auto &item : p->get_state()->log_mem_write) {
+    uint64_t paddr = 0;
+    try {
+      paddr = p->get_mmu()->vaddr2paddr(std::get<0>(item), std::get<2>(item), STORE);
+    } catch (...) {
+      paddr = 0;
+    }
+    uint64_t paddr2 = paddr;
+    const auto page0 = std::min<uint64_t>(std::get<2>(item), PGSIZE - (std::get<0>(item) % PGSIZE));
+    if (page0 != std::get<2>(item)) {
+      try {
+        paddr2 = p->get_mmu()->vaddr2paddr(std::get<0>(item) + page0, std::get<2>(item) - page0, STORE);
+      } catch (...) {
+        paddr2 = paddr;
+      }
+    }
+    data.m_MemWs.emplace_back(std::get<0>(item), std::get<2>(item), std::get<1>(item), paddr, paddr2);
+    shadow.mmu_trace.paddr = paddr;
+  }
   }
 #endif
 
