@@ -119,6 +119,11 @@ add_executable(SpikeSimObjAsyncTest
 )
 target_link_libraries(SpikeSimObjAsyncTest spikeInterface_V2 utility functrace ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
 
+add_executable(SpikeStateExporterTest
+  src/SpikeStateExporterTest.cc
+)
+target_link_libraries(SpikeStateExporterTest spikeInterface_V2 ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+
 install(TARGETS spikeInterface_V2)
 install(PROGRAMS ${SPIKE_INSTALL_DIR}/bin/spike TYPE BIN)
 install(FILES ${SPIKE_INTF_LIBS} TYPE LIB)
