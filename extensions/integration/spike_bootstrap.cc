@@ -560,11 +560,7 @@ spike_boot_result_t spike_bootstrap(
     }
   }
   if (options.step_interleave != 0) {
-    if (auto* runtime = result.sim->runtime_context()) {
-      if (auto* policy = runtime->step_policy()) {
-        policy->set_interleave(options.step_interleave);
-      }
-    }
+    result.sim->set_interleave(options.step_interleave);
   }
   result.sim->set_histogram(options.histogram);
   result.dump_dts_only = options.dump_dts;

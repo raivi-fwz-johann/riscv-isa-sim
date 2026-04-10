@@ -65,6 +65,7 @@ public:
   virtual const cfg_t &get_cfg() const override { return *cfg; }
   spike_runtime_context_t* runtime_context() const { return runtime_ctx_.get(); }
   void set_runtime_context(std::unique_ptr<spike_runtime_context_t> runtime_ctx) { runtime_ctx_ = std::move(runtime_ctx); }
+  void set_interleave(size_t value) { INTERLEAVE = value; }
 
   virtual const std::map<size_t, processor_t*>& get_harts() const override { return harts; }
   const bus_t& get_bus() const {  return bus;}
@@ -81,8 +82,7 @@ public:
   void set_post_reset_callback(std::function<void()> cb) { post_reset_cb = std::move(cb); }
   void set_checkpoint_save_on_trigger(bool value) { checkpoint_save_on_trigger = value; }
   virtual void request_checkpoint_save() override;
-
-  static const size_t INTERLEAVE = 5000;
+  size_t INTERLEAVE;
   static const size_t INSNS_PER_RTC_TICK = 100; // 10 MHz clock for 1 BIPS core
   static const size_t CPU_HZ = 1000000000; // 1GHz CPU
 

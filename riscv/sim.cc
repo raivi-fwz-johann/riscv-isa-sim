@@ -32,8 +32,6 @@ static void handle_signal(int sig)
   signal(sig, &handle_signal);
 }
 
-const size_t sim_t::INTERLEAVE;
-
 extern device_factory_t* clint_factory;
 extern device_factory_t* plic_factory;
 extern device_factory_t* ns16550_factory;
@@ -50,6 +48,7 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
              FILE *cmd_file, // needed for command line option --cmd
              std::optional<unsigned long long> instruction_limit)
   : htif_t(args),
+    INTERLEAVE(5000),
     cfg(cfg),
     mems(mems),
     dtb_discovery(dtb_discovery),
@@ -307,24 +306,13 @@ int sim_t::run()
 
 void sim_t::step(size_t n)
 {
-  const size_t interleave = [&]() -> size_t {
-    if (auto* runtime = runtime_context()) {
-      if (auto* policy = runtime->step_policy()) {
-        if (policy->interleave() != 0) {
-          return policy->interleave();
-        }
-      }
-    }
-    return INTERLEAVE;
-  }();
-
   for (size_t i = 0, steps = 0; i < n; i += steps)
   {
-    steps = std::min(n - i, interleave - current_step);
+    steps = std::min(n - i, INTERLEAVE - current_step);
     procs[current_proc]->step(steps);
 
     current_step += steps;
-    if (current_step == interleave)
+    if (current_step == INTERLEAVE)
     {
       current_step = 0;
       procs[current_proc]->get_mmu()->yield_load_reservation();
