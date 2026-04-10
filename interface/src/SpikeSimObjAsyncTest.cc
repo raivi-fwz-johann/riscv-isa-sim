@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
   std::string dtb = argv[1];
   std::string isa = argv[2];
   std::string elf = argv[3];
-  std::string cmd = "./spike --log-commits --priv=msu --misaligned --dtb=";
+  std::string cmd = "./spike --log-commits --priv=msu --dtb=";
   cmd += dtb + " --isa=";
   cmd += isa + " " + elf;
   std::cout << "cmd: " << cmd << std::endl;
