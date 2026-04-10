@@ -100,26 +100,28 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
 #if defined (FULL_TRACE) || defined (MEM_TRACE)
   // parse log_mem_read
   data.m_MemRs.clear();
-  for (auto &item : p->get_state()->log_mem_read) {
-    uint64_t paddr = 0;
-    try {
-      paddr = p->get_mmu()->vaddr2paddr(std::get<0>(item), std::get<2>(item), LOAD);
-    } catch (...) {
-      paddr = 0;
-    }
-    data.m_MemRs.emplace_back(std::get<0>(item), paddr, std::get<2>(item), std::get<1>(item));
-    shadow.mmu_trace.paddr = paddr;
-  }
   data.m_MemWs.clear();
-  for (auto &item : p->get_state()->log_mem_write) {
-    uint64_t paddr = 0;
-    try {
-      paddr = p->get_mmu()->vaddr2paddr(std::get<0>(item), std::get<2>(item), STORE);
-    } catch (...) {
-      paddr = 0;
+  if (m_LogMem) {
+    for (auto &item : p->get_state()->log_mem_read) {
+      uint64_t paddr = 0;
+      try {
+        paddr = p->get_mmu()->vaddr2paddr(std::get<0>(item), std::get<2>(item), LOAD);
+      } catch (...) {
+        paddr = 0;
+      }
+      data.m_MemRs.emplace_back(std::get<0>(item), paddr, std::get<2>(item), std::get<1>(item));
+      shadow.mmu_trace.paddr = paddr;
     }
-    data.m_MemWs.emplace_back(std::get<0>(item), paddr, std::get<2>(item), std::get<1>(item));
-    shadow.mmu_trace.paddr = paddr;
+    for (auto &item : p->get_state()->log_mem_write) {
+      uint64_t paddr = 0;
+      try {
+        paddr = p->get_mmu()->vaddr2paddr(std::get<0>(item), std::get<2>(item), STORE);
+      } catch (...) {
+        paddr = 0;
+      }
+      data.m_MemWs.emplace_back(std::get<0>(item), paddr, std::get<2>(item), std::get<1>(item));
+      shadow.mmu_trace.paddr = paddr;
+    }
   }
 #endif
 
@@ -259,5 +261,10 @@ void RawSpike::setLogCommits(bool LogCommits, bool IsFast, [[maybe_unused]]uint3
 }
 
 void RawSpike::setLogMem(bool val) {
-  (void)val;
+  m_LogMem = val;
+  if (auto* runtime = m_Simulator->runtime_context()) {
+    if (auto* manager = runtime->log_manager()) {
+      manager->set_enable_fast_mem_log(val);
+    }
+  }
 }

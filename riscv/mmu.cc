@@ -327,8 +327,8 @@ void mmu_t::load_slow_path(reg_t original_addr, std::size_t len,
     check_triggers(triggers::OPERATION_LOAD,
       transformed_addr, access_info.effective_virt, len, bytes);
 
-  if (unlikely(proc->get_log_commits_enabled()))
-    proc->state.log_mem_read.push_back(std::make_tuple(original_addr, 0, len));
+  if (unlikely(mem_log_active()))
+    proc->state.log_mem_read.push_back(std::make_tuple(original_addr, reg_from_bytes(len, bytes), len));
 }
 
 inline void mmu_t::perform_intrapage_store(reg_t vaddr, uintptr_t host_addr, reg_t paddr, reg_t len, const uint8_t* bytes, xlate_flags_t xlate_flags)
@@ -417,7 +417,7 @@ void mmu_t::store_slow_path(reg_t original_addr, std::size_t len,
     store_slow_path_intrapage(len, bytes, access_info, actually_store);
   }
 
-  if (actually_store && proc && unlikely(proc->get_log_commits_enabled())) {
+  if (actually_store && proc && unlikely(mem_log_active())) {
     for (size_t offset = 0; offset < len; offset += sizeof(reg_t)) {
       auto this_size = std::min(len - offset, sizeof(reg_t));
       auto this_data = reg_from_bytes(this_size, bytes + offset);
