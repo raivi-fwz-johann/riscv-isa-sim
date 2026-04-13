@@ -441,7 +441,7 @@ void processor_t::take_trap(trap_t& t, reg_t epc)
   }
 
   if (auto* hook = get_hook_dispatcher(this)) {
-    if (hook->on_trap(&fetch, epc, t) != 0) {
+    if (hook->on_trap(get_id(), &fetch, epc, t) != 0) {
       return;
     }
   }

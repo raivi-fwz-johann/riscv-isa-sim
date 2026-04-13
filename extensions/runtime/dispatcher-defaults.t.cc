@@ -17,7 +17,7 @@ int main()
   if (hook.on_next_pc(0x1004) != 0x1004)
     return 3;
 
-  if (hook.on_trap(nullptr, 0x1000, trap) != 0)
+  if (hook.on_trap(0, nullptr, 0x1000, trap) != 0)
     return 4;
 
   if (!hook.on_exit(0))
@@ -33,7 +33,7 @@ int main()
   if (*csr_real)
     return 7;
 
-  hook.on_exec_observe(nullptr, 0x1000, 0x1004);
+  hook.on_exec_observe(0, nullptr, 0x1000, 0x1004);
   hook.on_fake_step(1, 1);
   hook.on_device_uart_tx(nullptr, 0x41);
 
