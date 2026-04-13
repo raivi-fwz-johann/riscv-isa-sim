@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <string>
 #include <vector>
 #include <iostream>
 
@@ -41,6 +42,39 @@ struct MmuTrace {
 struct TrapInfo {
   uint64_t cause, tval, tval2;
   bool in_trap, has_tval2;
+};
+
+struct PTWStep {
+  uint64_t paddr = 0;
+  uint64_t pte = 0;
+};
+
+struct MemOp {
+  uint64_t vaddr = 0;
+  uint64_t paddr = 0;
+  uint8_t size_bytes = 0;
+  std::vector<PTWStep> ptw_steps;
+};
+
+struct RegValue {
+  uint32_t flat_id = 0;
+};
+
+struct NewTrace {
+  uint64_t vpc = std::numeric_limits<uint64_t>::max();
+  uint64_t ppc = std::numeric_limits<uint64_t>::max();
+  uint32_t instr_raw = 0;
+  std::vector<PTWStep> fetch_ptw;
+  std::vector<RegValue> src_regs;
+  std::vector<RegValue> dst_regs;
+  uint64_t vtype = 0;
+  uint64_t vl = 0;
+  uint64_t vstart = 0;
+  uint64_t active_mask = 0;
+  std::vector<MemOp> mem_ops;
+  bool branch_taken = false;
+  uint64_t next_vpc = std::numeric_limits<uint64_t>::max();
+  uint32_t exception = 0;
 };
 
 #define INVALID_INST_ID std::numeric_limits<uint64_t>::max()
@@ -211,10 +245,30 @@ public:
     return TrapInfo{.cause = cause_, .tval = tval_, .tval2 = tval2_, .in_trap = m_InTrap, .has_tval2 = has_tval2_};
   }
 
-  void SetNPC(uint64_t npc) { m_NPc = npc; }
+  void SetNPC(uint64_t npc) {
+    m_NPc = npc;
+    next_vpc = npc;
+    newTrace.next_vpc = npc;
+  }
 
  public:
   MmuTrace m_mmuTrace;
+  NewTrace newTrace;
+  uint64_t vpc = ERROR_PC_ADDR;
+  uint64_t ppc = ERROR_PC_ADDR;
+  uint32_t instr_raw = 0;
+  std::vector<PTWStep> fetch_ptw;
+  std::vector<RegValue> src_regs;
+  std::vector<RegValue> dst_regs;
+  uint64_t vtype = 0;
+  uint64_t vl = 0;
+  uint64_t vstart = 0;
+  uint64_t active_mask = 0;
+  std::vector<MemOp> mem_ops;
+  bool branch_taken = false;
+  uint64_t next_vpc = ERROR_PC_ADDR;
+  uint32_t exception = 0;
+  std::string toTraceString() const;
 
  private:
   void free();
