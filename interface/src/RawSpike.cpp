@@ -1,5 +1,6 @@
 #include "RawSpike.hpp"
 
+#include <algorithm>
 #include <sstream>
 
 #include "spike_init.h"
@@ -7,6 +8,153 @@
 #include "SpikeSimObjHooker.hpp"
 #include "SpikeStateExporter.hpp"
 #include "mmu.h"
+
+namespace {
+
+constexpr uint32_t kIntRegBase = 0x00;
+constexpr uint32_t kFpRegBase = 0x20;
+constexpr uint32_t kVecRegBase = 0x40;
+
+uint32_t int_reg(uint32_t reg) { return kIntRegBase + reg; }
+uint32_t fp_reg(uint32_t reg) { return kFpRegBase + reg; }
+uint32_t vec_reg(uint32_t reg) { return kVecRegBase + reg; }
+
+void push_unique(std::vector<RegValue>& regs, uint32_t flat_id)
+{
+  for (const auto& reg : regs) {
+    if (reg.flat_id == flat_id) {
+      return;
+    }
+  }
+  regs.push_back({.flat_id = flat_id});
+}
+
+std::vector<PTWStep> build_ptw(sim_t* sim, processor_t* p, uint64_t vaddr)
+{
+  std::vector<PTWStep> steps;
+  if (!sim || !p || p->get_xlen() != 64) {
+    return steps;
+  }
+
+  const reg_t satp = p->get_state()->satp->read();
+  if ((satp & SATP64_PPN) == 0) {
+    return steps;
+  }
+
+  reg_t base = (satp & SATP64_PPN) << PGSHIFT;
+  for (int level = 2; level >= 0; --level) {
+    const reg_t idx = (vaddr >> (PGSHIFT + level * 9)) & 0x1ff;
+    const reg_t pte_paddr = base + idx * 8;
+    const reg_t pte = sim->from_target(sim->memif().read_uint64(pte_paddr));
+    steps.push_back({.paddr = pte_paddr, .pte = pte});
+    if (PTE_TABLE(pte)) {
+      base = ((pte >> PTE_PPN_SHIFT) & SATP64_PPN) << PGSHIFT;
+    } else {
+      break;
+    }
+  }
+
+  return steps;
+}
+
+void decode_src_regs(uint32_t bits, std::vector<RegValue>& src_regs)
+{
+  insn_t insn(bits);
+  if (insn.length() != 4) {
+    return;
+  }
+
+  switch (insn.opcode()) {
+    case 0x03:
+    case 0x13:
+    case 0x1b:
+    case 0x67:
+      push_unique(src_regs, int_reg(insn.rs1()));
+      break;
+    case 0x07:
+      push_unique(src_regs, int_reg(insn.rs1()));
+      break;
+    case 0x17:
+    case 0x37:
+    case 0x6f:
+      break;
+    case 0x23:
+      push_unique(src_regs, int_reg(insn.rs1()));
+      push_unique(src_regs, int_reg(insn.rs2()));
+      break;
+    case 0x27:
+      push_unique(src_regs, int_reg(insn.rs1()));
+      push_unique(src_regs, fp_reg(insn.rs2()));
+      break;
+    case 0x33:
+    case 0x3b:
+    case 0x63:
+    case 0x2f:
+      push_unique(src_regs, int_reg(insn.rs1()));
+      push_unique(src_regs, int_reg(insn.rs2()));
+      break;
+    case 0x43:
+    case 0x47:
+    case 0x4b:
+    case 0x4f:
+      push_unique(src_regs, fp_reg(insn.rs1()));
+      push_unique(src_regs, fp_reg(insn.rs2()));
+      push_unique(src_regs, fp_reg(insn.rs3()));
+      break;
+    case 0x53:
+      push_unique(src_regs, fp_reg(insn.rs1()));
+      if (insn.funct7() != 0x70 && insn.funct7() != 0x78) {
+        push_unique(src_regs, fp_reg(insn.rs2()));
+      }
+      break;
+    case 0x57: {
+      const auto funct3 = insn.funct3();
+      if (funct3 == 7) {
+        push_unique(src_regs, int_reg(insn.rs1()));
+        if (insn.rs2() != 0) {
+          push_unique(src_regs, int_reg(insn.rs2()));
+        }
+      } else {
+        push_unique(src_regs, vec_reg(insn.rs2()));
+        if (funct3 == 4 || funct3 == 6) {
+          push_unique(src_regs, int_reg(insn.rs1()));
+        } else {
+          push_unique(src_regs, vec_reg(insn.rs1()));
+        }
+      }
+      break;
+    }
+    case 0x73: {
+      const auto funct3 = insn.funct3();
+      if (funct3 == 1 || funct3 == 2 || funct3 == 3) {
+        push_unique(src_regs, int_reg(insn.rs1()));
+      }
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+void sync_new_trace(InstTrace& data)
+{
+  data.newTrace.vpc = data.vpc;
+  data.newTrace.ppc = data.ppc;
+  data.newTrace.instr_raw = data.instr_raw;
+  data.newTrace.fetch_ptw = data.fetch_ptw;
+  data.newTrace.src_regs = data.src_regs;
+  data.newTrace.dst_regs = data.dst_regs;
+  data.newTrace.vtype = data.vtype;
+  data.newTrace.vl = data.vl;
+  data.newTrace.vstart = data.vstart;
+  data.newTrace.active_mask = data.active_mask;
+  data.newTrace.mem_ops = data.mem_ops;
+  data.newTrace.branch_taken = data.branch_taken;
+  data.newTrace.next_vpc = data.next_vpc;
+  data.newTrace.exception = data.exception;
+}
+
+}  // namespace
 
 static Float128 toFloat128(float128_t val) {
   Float128 res;
@@ -117,6 +265,42 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
   if (observed.in_trap && data.m_mmuTrace.excp_cause == 0) {
     data.m_mmuTrace.excp_cause = observed.cause;
   }
+  data.vpc = data.m_Pc;
+  data.ppc = data.m_PPN.val;
+  data.instr_raw = static_cast<uint32_t>(data.m_Bits);
+  data.fetch_ptw.clear();
+  auto walked_fetch_ptw = build_ptw(m_Simulator.get(), p, data.vpc);
+  if (!walked_fetch_ptw.empty()) {
+    data.fetch_ptw = std::move(walked_fetch_ptw);
+  } else {
+    for (size_t i = 0; i < 5; ++i) {
+      if (data.m_mmuTrace.pte_paddr[i] != 0) {
+        data.fetch_ptw.push_back({.paddr = data.m_mmuTrace.pte_paddr[i], .pte = 0});
+      }
+    }
+  }
+  data.src_regs.clear();
+  decode_src_regs(data.instr_raw, data.src_regs);
+  data.dst_regs.clear();
+  data.vtype = p->VU.vtype ? p->VU.vtype->read() : 0;
+  data.vl = p->VU.vl ? p->VU.vl->read() : 0;
+  data.vstart = p->VU.vstart ? p->VU.vstart->read() : 0;
+  data.active_mask = 0;
+  if (p->any_vector_extensions()) {
+    const auto mask_limit = std::min<uint64_t>(data.vl, 64);
+    for (uint64_t i = 0; i < mask_limit; ++i) {
+      if (p->VU.mask_elt(0, i)) {
+        data.active_mask |= (uint64_t(1) << i);
+      }
+    }
+  }
+  data.mem_ops.clear();
+  data.branch_taken =
+      !observed.in_trap &&
+      data.m_NPc != ERROR_PC_ADDR &&
+      data.m_NPc != data.m_Pc + static_cast<uint64_t>(insn_t(data.m_Bits).length());
+  data.next_vpc = data.m_NPc;
+  data.exception = observed.in_trap ? static_cast<uint32_t>(observed.cause) : 0;
 
 #if defined (FULL_TRACE) || defined (MEM_TRACE)
   // parse log_mem_read
@@ -141,6 +325,9 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
     }
     data.m_MemRs.emplace_back(std::get<0>(item), std::get<2>(item), std::get<1>(item), paddr, paddr2);
     data.m_mmuTrace.paddr = paddr;
+    MemOp op{.vaddr = std::get<0>(item), .paddr = paddr, .size_bytes = static_cast<uint8_t>(std::get<2>(item))};
+    op.ptw_steps = build_ptw(m_Simulator.get(), p, std::get<0>(item));
+    data.mem_ops.push_back(std::move(op));
   }
   for (auto &item : p->get_state()->log_mem_write) {
     uint64_t paddr = 0;
@@ -160,6 +347,9 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
     }
     data.m_MemWs.emplace_back(std::get<0>(item), std::get<2>(item), std::get<1>(item), paddr, paddr2);
     data.m_mmuTrace.paddr = paddr;
+    MemOp op{.vaddr = std::get<0>(item), .paddr = paddr, .size_bytes = static_cast<uint8_t>(std::get<2>(item))};
+    op.ptw_steps = build_ptw(m_Simulator.get(), p, std::get<0>(item));
+    data.mem_ops.push_back(std::move(op));
   }
   }
 #endif
@@ -213,6 +403,7 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
         } else {
           data.m_RegWs.emplace_back(item.first, toFloat128(item.second), nullptr, bytes);
         }
+        data.dst_regs.push_back({.flat_id = static_cast<uint32_t>(item.first)});
       }
     }
   }
@@ -229,6 +420,8 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
               p->get_state()->debug_mode,
               p->get_csr(0x300)};
 #endif
+
+  sync_new_trace(data);
 
   return 0;
 }
