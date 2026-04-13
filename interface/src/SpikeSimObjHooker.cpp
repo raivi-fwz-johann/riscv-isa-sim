@@ -27,15 +27,15 @@ bool SpikeSimObjHooker::on_exit(int code) {
   return false;
 }
 
-void SpikeSimObjHooker::on_exec_observe(insn_fetch_t* in, reg_t pc, reg_t npc) {
+void SpikeSimObjHooker::on_exec_observe(uint32_t hart_id, insn_fetch_t* in, reg_t pc, reg_t npc) {
   if (m_SimObj->m_StateExporter) {
-    m_SimObj->m_StateExporter->observe_exec(m_SimObj->m_CurrCId, in, pc, npc);
+    m_SimObj->m_StateExporter->observe_exec(hart_id, in, pc, npc);
   }
 }
 
-reg_t SpikeSimObjHooker::on_trap(void *in, reg_t pc, trap_t &t) {
+reg_t SpikeSimObjHooker::on_trap(uint32_t hart_id, void *in, reg_t pc, trap_t &t) {
   if (m_SimObj->m_StateExporter) {
-    return m_SimObj->m_StateExporter->observe_trap(m_SimObj->m_CurrCId, in, pc, t);
+    return m_SimObj->m_StateExporter->observe_trap(hart_id, in, pc, t);
   }
   return 0;
 }

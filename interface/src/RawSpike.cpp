@@ -64,7 +64,6 @@ void RawSpike::stop() {
 bool RawSpike::done() const { return m_Simulator->done(); }
 
 size_t RawSpike::step(size_t n, uint32_t CId) {
-  m_CurrCId = CId;
   return m_RunHelper.step(m_Simulator.get(), n, CId);
 }
 
