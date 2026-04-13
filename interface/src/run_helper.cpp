@@ -55,6 +55,18 @@ size_t run_helper_t::_step(sim_t *spike_sim, size_t n, size_t proc) {
     return total_steps_done;
   }
 
+  if (spike_sim->host_disabled()) {
+    while (!spike_sim->done() && n > 0) {
+      auto steps_done = spike_sim->idle_ext(n, proc);
+      if (steps_done == 0) {
+        break;
+      }
+      n -= steps_done;
+      total_steps_done += steps_done;
+    }
+    return total_steps_done;
+  }
+
   while (!spike_sim->done() && n > 0)
   {
     uint64_t tohost = 0;

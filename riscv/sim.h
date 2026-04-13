@@ -65,6 +65,7 @@ public:
   spike_runtime_context_t* runtime_context() const { return runtime_ctx_.get(); }
   void set_runtime_context(std::unique_ptr<spike_runtime_context_t> runtime_ctx) { runtime_ctx_ = std::move(runtime_ctx); }
   void set_interleave(size_t value) { INTERLEAVE = value; }
+  virtual bool host_disabled() const override;
 
   virtual const std::map<size_t, processor_t*>& get_harts() const override { return harts; }
   const bus_t& get_bus() const {  return bus;}
@@ -167,8 +168,6 @@ private:
   virtual size_t chunk_align() override { return 8; }
   virtual size_t chunk_max_size() override { return 8; }
   virtual endianness_t get_target_endianness() const override;
-  virtual bool host_disabled() const override;
-
 public:
   // Initialize this after procs, because in debug_module_t::reset() we
   // enumerate processors, which segfaults if procs hasn't been initialized

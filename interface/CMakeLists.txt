@@ -129,6 +129,11 @@ add_executable(SpikeRoiStateTest
 )
 target_link_libraries(SpikeRoiStateTest spikeInterface_V2 ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
 
+add_executable(RawSpikeRuntimeSmokeTest
+  src/RawSpikeRuntimeSmokeTest.cc
+)
+target_link_libraries(RawSpikeRuntimeSmokeTest spikeInterface_V2 ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+
 install(TARGETS spikeInterface_V2)
 install(PROGRAMS ${SPIKE_INSTALL_DIR}/bin/spike TYPE BIN)
 install(FILES ${SPIKE_INTF_LIBS} TYPE LIB)
