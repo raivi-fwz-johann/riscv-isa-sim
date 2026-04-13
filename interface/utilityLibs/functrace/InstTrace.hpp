@@ -12,7 +12,6 @@
 
 #include <cstdint>
 #include <limits>
-#include <string>
 #include <vector>
 #include <iostream>
 
@@ -268,8 +267,6 @@ public:
   bool branch_taken = false;
   uint64_t next_vpc = ERROR_PC_ADDR;
   uint32_t exception = 0;
-  std::string toTraceString() const;
-
  private:
   void free();
 
