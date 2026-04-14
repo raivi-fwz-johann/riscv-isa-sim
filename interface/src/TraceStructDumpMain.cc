@@ -52,31 +52,30 @@ void dump_mem_ops(const std::vector<MemOp>& mem_ops)
 
 void dump_inst(const InstTrace& inst)
 {
-  const auto& trace = inst.newTrace;
   std::cout << std::hex
-            << "vpc=0x" << trace.vpc
-            << " ppc=0x" << trace.ppc
-            << " instr_raw=0x" << trace.instr_raw
-            << " next_vpc=0x" << trace.next_vpc
-            << " branch_taken=" << std::dec << trace.branch_taken
-            << " exception=" << trace.exception
-            << " fetch_ptw=" << trace.fetch_ptw.size()
-            << " src_regs=" << trace.src_regs.size()
-            << " dst_regs=" << trace.dst_regs.size()
-            << " mem_ops=" << trace.mem_ops.size()
-            << " vtype=0x" << std::hex << trace.vtype
-            << " vl=" << std::dec << trace.vl
-            << " vstart=" << trace.vstart
-            << " active_mask=0x" << std::hex << trace.active_mask;
+            << "vpc=0x" << inst.getPc()
+            << " ppc=0x" << inst.getPcPAddr()
+            << " instr_raw=0x" << inst.getBits()
+            << " next_vpc=0x" << inst.getNPc()
+            << " branch_taken=" << std::dec << inst.isBranchTaken()
+            << " exception=" << inst.getException()
+            << " fetch_ptw=" << inst.getFetchPtw().size()
+            << " src_regs=" << inst.getSrcRegs().size()
+            << " dst_regs=" << inst.getDstRegs().size()
+            << " mem_ops=" << inst.getMemOps().size()
+            << " vtype=0x" << std::hex << inst.getVType()
+            << " vl=" << std::dec << inst.getVl()
+            << " vstart=" << inst.getVStart()
+            << " active_mask=0x" << std::hex << inst.getActiveMask();
 
   std::cout << " fetch_ptw_steps=";
-  dump_ptw_steps(trace.fetch_ptw);
+  dump_ptw_steps(inst.getFetchPtw());
   std::cout << " src_reg_list=";
-  dump_regs(trace.src_regs);
+  dump_regs(inst.getSrcRegs());
   std::cout << " dst_reg_list=";
-  dump_regs(trace.dst_regs);
+  dump_regs(inst.getDstRegs());
   std::cout << " mem_op_list=";
-  dump_mem_ops(trace.mem_ops);
+  dump_mem_ops(inst.getMemOps());
   std::cout
             << std::endl;
 }
@@ -99,7 +98,7 @@ int main(int argc, char** argv)
   while (!sim.done() && printed < 80) {
     InstTrace inst(0);
     sim.step(1, 0);
-    if (sim.record(inst, 0) == 0 && inst.perfect() && inst.newTrace.vpc >= 0x80000000) {
+    if (sim.record(inst, 0) == 0 && inst.perfect() && inst.getPc() >= 0x80000000) {
       dump_inst(inst);
       ++printed;
     }

@@ -76,11 +76,7 @@ MemWrite::MemWrite(uint64_t VAddr, size_t Bytes, uint64_t Val, uint64_t PAddr, u
 InstTrace::InstTrace(uint64_t Id) : m_Id(Id) {}
 
 InstTrace::InstTrace(uint64_t Id, uint64_t pc, uint64_t Bits, uint64_t PPN) 
-    : m_Id(Id), m_Pc(pc), m_Bits(Bits), m_PPN(PPN), vpc(pc), ppc(PPN), instr_raw(uint32_t(Bits)) {
-  newTrace.vpc = pc;
-  newTrace.ppc = PPN;
-  newTrace.instr_raw = static_cast<uint32_t>(Bits);
-}
+    : m_Id(Id), m_Vpc(pc), m_Ppc(PPN), m_InstrRaw(static_cast<uint32_t>(Bits)) {}
 
 
 InstTrace::~InstTrace() { free(); }
@@ -103,38 +99,55 @@ bool InstTrace::isLoad() const { return false; }
 bool InstTrace::isStore() const { return false; }
 #endif
 
-uint64_t InstTrace::getPc() const { return m_Pc; }
+uint64_t InstTrace::getPc() const { return m_Vpc; }
 
 uint64_t InstTrace::getPcPAddr() const {
-  return m_PPN.val;
+  return m_Ppc;
 }
 
 uint64_t InstTrace::getPcPAddr2() const { return m_PPN2.val; }
 
 uint64_t InstTrace::getNPc() const {
-  return m_NPc;
+  return m_NextVpc;
 }
 
 uint64_t InstTrace::getBits() const {
-  return m_Bits;
+  return m_InstrRaw;
 }
 
 uint32_t InstTrace::getInstLen() const {
-  return insn_length(m_Bits);
+  return insn_length(m_InstrRaw);
 }
 
 bool InstTrace::inTrap() const { return m_InTrap; }
 
 bool InstTrace::inWFI() const { return m_InWFI; }
 
-bool InstTrace::perfect() const { return m_PPN != ERROR_PC_ADDR; }
+bool InstTrace::perfect() const { return m_Ppc != ERROR_PC_ADDR; }
 
 void InstTrace::reset() {
   m_Id = 0;
-  m_Pc = ERROR_PC_ADDR;
-  m_NPc = ERROR_PC_ADDR;
-  m_Bits = 0;
-  m_PPN = ERROR_PC_ADDR;
+  m_Vpc = ERROR_PC_ADDR;
+  m_Ppc = ERROR_PC_ADDR;
+  m_NextVpc = ERROR_PC_ADDR;
+  m_InstrRaw = 0;
+  m_PPN2 = ERROR_PC_ADDR;
+  m_FetchPtw.clear();
+  m_SrcRegs.clear();
+  m_DstRegs.clear();
+  m_VType = 0;
+  m_Vl = 0;
+  m_VStart = 0;
+  m_ActiveMask = 0;
+  m_MemOps.clear();
+  m_BranchTaken = false;
+  m_Exception = 0;
+  m_InTrap = false;
+  has_tval2_ = false;
+  cause_ = 0;
+  tval_ = 0;
+  tval2_ = 0;
+  m_InWFI = false;
 #if defined (FULL_TRACE)
   m_RegWs.clear();
   m_MemRs.clear();
@@ -144,27 +157,12 @@ void InstTrace::reset() {
   m_MemWs.clear();
 #endif
   m_mmuTrace = {};
-  newTrace = {};
-  vpc = ERROR_PC_ADDR;
-  ppc = ERROR_PC_ADDR;
-  instr_raw = 0;
-  fetch_ptw.clear();
-  src_regs.clear();
-  dst_regs.clear();
-  vtype = 0;
-  vl = 0;
-  vstart = 0;
-  active_mask = 0;
-  mem_ops.clear();
-  branch_taken = false;
-  next_vpc = ERROR_PC_ADDR;
-  exception = 0;
-
 }
 
 void InstTrace::free() {
-  m_Bits = 0;
-  m_PPN = ERROR_PC_ADDR;
+  m_InstrRaw = 0;
+  m_Ppc = ERROR_PC_ADDR;
+  m_PPN2 = ERROR_PC_ADDR;
 }
 
 std::ostream &operator<<(std::ostream &os, const InstTrace &data) {

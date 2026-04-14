@@ -59,23 +59,6 @@ struct RegValue {
   uint32_t flat_id = 0;
 };
 
-struct NewTrace {
-  uint64_t vpc = std::numeric_limits<uint64_t>::max();
-  uint64_t ppc = std::numeric_limits<uint64_t>::max();
-  uint32_t instr_raw = 0;
-  std::vector<PTWStep> fetch_ptw;
-  std::vector<RegValue> src_regs;
-  std::vector<RegValue> dst_regs;
-  uint64_t vtype = 0;
-  uint64_t vl = 0;
-  uint64_t vstart = 0;
-  uint64_t active_mask = 0;
-  std::vector<MemOp> mem_ops;
-  bool branch_taken = false;
-  uint64_t next_vpc = std::numeric_limits<uint64_t>::max();
-  uint32_t exception = 0;
-};
-
 #define INVALID_INST_ID std::numeric_limits<uint64_t>::max()
 
 template <typename T> class LogIterator {
@@ -213,6 +196,16 @@ public:
   uint64_t getNPc() const;
   uint64_t getBits() const;
   uint32_t getInstLen() const;
+  const std::vector<PTWStep>& getFetchPtw() const { return m_FetchPtw; }
+  const std::vector<RegValue>& getSrcRegs() const { return m_SrcRegs; }
+  const std::vector<RegValue>& getDstRegs() const { return m_DstRegs; }
+  uint64_t getVType() const { return m_VType; }
+  uint64_t getVl() const { return m_Vl; }
+  uint64_t getVStart() const { return m_VStart; }
+  uint64_t getActiveMask() const { return m_ActiveMask; }
+  const std::vector<MemOp>& getMemOps() const { return m_MemOps; }
+  bool isBranchTaken() const { return m_BranchTaken; }
+  uint32_t getException() const { return m_Exception; }
   bool inTrap() const;
   bool inWFI() const;
 #if defined (FULL_TRACE)
@@ -244,36 +237,18 @@ public:
     return TrapInfo{.cause = cause_, .tval = tval_, .tval2 = tval2_, .in_trap = m_InTrap, .has_tval2 = has_tval2_};
   }
 
-  void SetNPC(uint64_t npc) {
-    m_NPc = npc;
-    next_vpc = npc;
-    newTrace.next_vpc = npc;
-  }
+  void SetNPC(uint64_t npc) { m_NextVpc = npc; }
 
  public:
   MmuTrace m_mmuTrace;
-  NewTrace newTrace;
-  uint64_t vpc = ERROR_PC_ADDR;
-  uint64_t ppc = ERROR_PC_ADDR;
-  uint32_t instr_raw = 0;
-  std::vector<PTWStep> fetch_ptw;
-  std::vector<RegValue> src_regs;
-  std::vector<RegValue> dst_regs;
-  uint64_t vtype = 0;
-  uint64_t vl = 0;
-  uint64_t vstart = 0;
-  uint64_t active_mask = 0;
-  std::vector<MemOp> mem_ops;
-  bool branch_taken = false;
-  uint64_t next_vpc = ERROR_PC_ADDR;
-  uint32_t exception = 0;
  private:
   void free();
 
   uint64_t m_Id = 0;
-  uint64_t m_Pc = ERROR_PC_ADDR;
-  uint64_t m_NPc = ERROR_PC_ADDR;
-  uint64_t m_Bits = 0;
+  uint64_t m_Vpc = ERROR_PC_ADDR;
+  uint64_t m_Ppc = ERROR_PC_ADDR;
+  uint64_t m_NextVpc = ERROR_PC_ADDR;
+  uint32_t m_InstrRaw = 0;
   struct PPN_t {
     uint64_t val = ERROR_PC_ADDR;
     PPN_t() = default;
@@ -295,8 +270,18 @@ public:
     bool operator!=(uint64_t val) const {
       return this->val != val;
     }
-  } m_PPN;
+  };
   PPN_t m_PPN2;
+  std::vector<PTWStep> m_FetchPtw;
+  std::vector<RegValue> m_SrcRegs;
+  std::vector<RegValue> m_DstRegs;
+  uint64_t m_VType = 0;
+  uint64_t m_Vl = 0;
+  uint64_t m_VStart = 0;
+  uint64_t m_ActiveMask = 0;
+  std::vector<MemOp> m_MemOps;
+  bool m_BranchTaken = false;
+  uint32_t m_Exception = 0;
 
   /* Trap relative members */
   bool m_InTrap{false};
@@ -339,7 +324,7 @@ public:
   InstTraceModifier(InstTrace &inst) : inst_(inst) {}
 
   void setNpc(uint64_t val) {
-    inst_.m_NPc = val;
+    inst_.m_NextVpc = val;
   }
   void clearRegWrites() {
 #if defined (FULL_TRACE)

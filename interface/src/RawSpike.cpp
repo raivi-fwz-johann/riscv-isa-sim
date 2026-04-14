@@ -136,24 +136,6 @@ void decode_src_regs(uint32_t bits, std::vector<RegValue>& src_regs)
   }
 }
 
-void sync_new_trace(InstTrace& data)
-{
-  data.newTrace.vpc = data.vpc;
-  data.newTrace.ppc = data.ppc;
-  data.newTrace.instr_raw = data.instr_raw;
-  data.newTrace.fetch_ptw = data.fetch_ptw;
-  data.newTrace.src_regs = data.src_regs;
-  data.newTrace.dst_regs = data.dst_regs;
-  data.newTrace.vtype = data.vtype;
-  data.newTrace.vl = data.vl;
-  data.newTrace.vstart = data.vstart;
-  data.newTrace.active_mask = data.active_mask;
-  data.newTrace.mem_ops = data.mem_ops;
-  data.newTrace.branch_taken = data.branch_taken;
-  data.newTrace.next_vpc = data.next_vpc;
-  data.newTrace.exception = data.exception;
-}
-
 }  // namespace
 
 static Float128 toFloat128(float128_t val) {
@@ -235,18 +217,22 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
 
   data.m_InTrap = observed.in_trap;
   data.m_InWFI = inWFI(CId);
+  data.cause_ = 0;
+  data.tval_ = 0;
+  data.has_tval2_ = false;
+  data.tval2_ = 0;
 
-  data.m_Pc = observed.pc;
-  data.m_Bits = observed.bits;
-  data.m_PPN = observed.paddr;
+  data.m_Vpc = observed.pc;
+  data.m_InstrRaw = static_cast<uint32_t>(observed.bits);
+  data.m_Ppc = observed.paddr;
   data.m_PPN2 = observed.paddr2;
-  data.m_NPc = observed.npc == ERROR_PC_ADDR ? p->get_state()->pc : observed.npc;
-  if (!observed.in_trap && data.m_Bits != 0) {
-    const auto inst_len = static_cast<uint64_t>(insn_t(data.m_Bits).length());
-    const auto page0 = std::min<uint64_t>(inst_len, PGSIZE - (data.m_Pc % PGSIZE));
+  data.m_NextVpc = observed.npc == ERROR_PC_ADDR ? p->get_state()->pc : observed.npc;
+  if (!observed.in_trap && data.m_InstrRaw != 0) {
+    const auto inst_len = static_cast<uint64_t>(insn_t(data.m_InstrRaw).length());
+    const auto page0 = std::min<uint64_t>(inst_len, PGSIZE - (data.m_Vpc % PGSIZE));
     if (page0 != inst_len) {
       try {
-        data.m_PPN2 = p->get_mmu()->vaddr2paddr(data.m_Pc + page0, 1, FETCH);
+        data.m_PPN2 = p->get_mmu()->vaddr2paddr(data.m_Vpc + page0, 1, FETCH);
       } catch (...) {
         data.m_PPN2 = ERROR_PC_ADDR;
       }
@@ -265,42 +251,38 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
   if (observed.in_trap && data.m_mmuTrace.excp_cause == 0) {
     data.m_mmuTrace.excp_cause = observed.cause;
   }
-  data.vpc = data.m_Pc;
-  data.ppc = data.m_PPN.val;
-  data.instr_raw = static_cast<uint32_t>(data.m_Bits);
-  data.fetch_ptw.clear();
-  auto walked_fetch_ptw = build_ptw(m_Simulator.get(), p, data.vpc);
+  data.m_FetchPtw.clear();
+  auto walked_fetch_ptw = build_ptw(m_Simulator.get(), p, data.m_Vpc);
   if (!walked_fetch_ptw.empty()) {
-    data.fetch_ptw = std::move(walked_fetch_ptw);
+    data.m_FetchPtw = std::move(walked_fetch_ptw);
   } else {
     for (size_t i = 0; i < 5; ++i) {
       if (data.m_mmuTrace.pte_paddr[i] != 0) {
-        data.fetch_ptw.push_back({.paddr = data.m_mmuTrace.pte_paddr[i], .pte = 0});
+        data.m_FetchPtw.push_back({.paddr = data.m_mmuTrace.pte_paddr[i], .pte = 0});
       }
     }
   }
-  data.src_regs.clear();
-  decode_src_regs(data.instr_raw, data.src_regs);
-  data.dst_regs.clear();
-  data.vtype = p->VU.vtype ? p->VU.vtype->read() : 0;
-  data.vl = p->VU.vl ? p->VU.vl->read() : 0;
-  data.vstart = p->VU.vstart ? p->VU.vstart->read() : 0;
-  data.active_mask = 0;
+  data.m_SrcRegs.clear();
+  decode_src_regs(data.m_InstrRaw, data.m_SrcRegs);
+  data.m_DstRegs.clear();
+  data.m_VType = p->VU.vtype ? p->VU.vtype->read() : 0;
+  data.m_Vl = p->VU.vl ? p->VU.vl->read() : 0;
+  data.m_VStart = p->VU.vstart ? p->VU.vstart->read() : 0;
+  data.m_ActiveMask = 0;
   if (p->any_vector_extensions()) {
-    const auto mask_limit = std::min<uint64_t>(data.vl, 64);
+    const auto mask_limit = std::min<uint64_t>(data.m_Vl, 64);
     for (uint64_t i = 0; i < mask_limit; ++i) {
       if (p->VU.mask_elt(0, i)) {
-        data.active_mask |= (uint64_t(1) << i);
+        data.m_ActiveMask |= (uint64_t(1) << i);
       }
     }
   }
-  data.mem_ops.clear();
-  data.branch_taken =
+  data.m_MemOps.clear();
+  data.m_BranchTaken =
       !observed.in_trap &&
-      data.m_NPc != ERROR_PC_ADDR &&
-      data.m_NPc != data.m_Pc + static_cast<uint64_t>(insn_t(data.m_Bits).length());
-  data.next_vpc = data.m_NPc;
-  data.exception = observed.in_trap ? static_cast<uint32_t>(observed.cause) : 0;
+      data.m_NextVpc != ERROR_PC_ADDR &&
+      data.m_NextVpc != data.m_Vpc + static_cast<uint64_t>(insn_t(data.m_InstrRaw).length());
+  data.m_Exception = observed.in_trap ? static_cast<uint32_t>(observed.cause) : 0;
 
 #if defined (FULL_TRACE) || defined (MEM_TRACE)
   // parse log_mem_read
@@ -323,13 +305,13 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
         paddr2 = paddr;
       }
     }
-    data.m_MemRs.emplace_back(std::get<0>(item), std::get<2>(item), std::get<1>(item), paddr, paddr2);
-    data.m_mmuTrace.paddr = paddr;
-    MemOp op{.vaddr = std::get<0>(item), .paddr = paddr, .size_bytes = static_cast<uint8_t>(std::get<2>(item))};
-    op.ptw_steps = build_ptw(m_Simulator.get(), p, std::get<0>(item));
-    data.mem_ops.push_back(std::move(op));
-  }
-  for (auto &item : p->get_state()->log_mem_write) {
+	    data.m_MemRs.emplace_back(std::get<0>(item), std::get<2>(item), std::get<1>(item), paddr, paddr2);
+	    data.m_mmuTrace.paddr = paddr;
+	    MemOp op{.vaddr = std::get<0>(item), .paddr = paddr, .size_bytes = static_cast<uint8_t>(std::get<2>(item))};
+	    op.ptw_steps = build_ptw(m_Simulator.get(), p, std::get<0>(item));
+	    data.m_MemOps.push_back(std::move(op));
+	  }
+	  for (auto &item : p->get_state()->log_mem_write) {
     uint64_t paddr = 0;
     try {
       paddr = p->get_mmu()->vaddr2paddr(std::get<0>(item), std::get<2>(item), STORE);
@@ -345,13 +327,13 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
         paddr2 = paddr;
       }
     }
-    data.m_MemWs.emplace_back(std::get<0>(item), std::get<2>(item), std::get<1>(item), paddr, paddr2);
-    data.m_mmuTrace.paddr = paddr;
-    MemOp op{.vaddr = std::get<0>(item), .paddr = paddr, .size_bytes = static_cast<uint8_t>(std::get<2>(item))};
-    op.ptw_steps = build_ptw(m_Simulator.get(), p, std::get<0>(item));
-    data.mem_ops.push_back(std::move(op));
-  }
-  }
+	    data.m_MemWs.emplace_back(std::get<0>(item), std::get<2>(item), std::get<1>(item), paddr, paddr2);
+	    data.m_mmuTrace.paddr = paddr;
+	    MemOp op{.vaddr = std::get<0>(item), .paddr = paddr, .size_bytes = static_cast<uint8_t>(std::get<2>(item))};
+	    op.ptw_steps = build_ptw(m_Simulator.get(), p, std::get<0>(item));
+	    data.m_MemOps.push_back(std::move(op));
+	  }
+	  }
 #endif
 
   m_StateExporter->reset_observed(CId);
@@ -395,18 +377,18 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
       if (!is_vec) {
         size_t bytes = size / 8;
 
-        if (is_vreg) {
-          // malloc mem for reg value
-          char *value = new char[bytes];
-          memcpy(value, &p->VU.elt<uint8_t>(rd, 0), bytes);
-          data.m_RegWs.emplace_back(item.first, toFloat128(item.second), std::move(value), bytes);
-        } else {
-          data.m_RegWs.emplace_back(item.first, toFloat128(item.second), nullptr, bytes);
-        }
-        data.dst_regs.push_back({.flat_id = static_cast<uint32_t>(item.first)});
-      }
-    }
-  }
+	        if (is_vreg) {
+	          // malloc mem for reg value
+	          char *value = new char[bytes];
+	          memcpy(value, &p->VU.elt<uint8_t>(rd, 0), bytes);
+	          data.m_RegWs.emplace_back(item.first, toFloat128(item.second), std::move(value), bytes);
+	        } else {
+	          data.m_RegWs.emplace_back(item.first, toFloat128(item.second), nullptr, bytes);
+	        }
+	        data.m_DstRegs.push_back({.flat_id = static_cast<uint32_t>(item.first)});
+	      }
+	    }
+	  }
 
   data.m_LastInstPriv = state->last_inst_priv;
   data.m_LastInstXLen = state->last_inst_xlen;
@@ -421,9 +403,7 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
               p->get_csr(0x300)};
 #endif
 
-  sync_new_trace(data);
-
-  return 0;
+	  return 0;
 }
 
 InstTrace RawSpike::fetchInstOnly(uint64_t Pc, uint32_t CId, uint64_t IId) {
