@@ -124,6 +124,18 @@ int test_current_info_normal(const fs::path& dir)
     if (inst.m_mmuTrace.paddr == 0 || inst.m_mmuTrace.paddr == ERROR_PC_ADDR) {
       return 40 + i;
     }
+    if (inst.getException() != 0) {
+      return 50 + i;
+    }
+    if (inst.isBranchTaken()) {
+      return 60 + i;
+    }
+    if (inst.getVType() != 0 || inst.getVl() != 0 || inst.getVStart() != 0 || inst.getActiveMask() != 0) {
+      return 70 + i;
+    }
+    if (inst.getSrcRegs().empty() && i != 0) {
+      return 80 + i;
+    }
   }
 
   sim.stop();
