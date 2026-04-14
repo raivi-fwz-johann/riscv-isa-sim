@@ -15,5 +15,17 @@ int main()
   static_assert(std::is_same_v<
       decltype(std::declval<spike_runtime_context_t&>().checkpoint_controller()),
       checkpoint_controller_t*>);
+
+  auto factory_controller = make_checkpoint_controller(checkpoint_legacy_config_t{});
+  (void)factory_controller;
+
+  spike_runtime_context_t runtime_context;
+  checkpoint_controller_t* runtime_controller = runtime_context.checkpoint_controller();
+  if (!runtime_controller) {
+    return 1;
+  }
+  if (runtime_controller->enabled()) {
+    return 2;
+  }
   return 0;
 }

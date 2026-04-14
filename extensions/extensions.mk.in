@@ -8,8 +8,6 @@ extensions_install_hdrs = \
 	runtime/spike_log_manager.h \
 	integration/spike_bootstrap.h \
 	checkpoint/checkpoint_controller.h \
-	checkpoint/checkpoint_files.h \
-	checkpoint/checkpoint_restore_rom.h \
 
 extensions_srcs = \
 	runtime/spike_device_observe_registry.cc \
