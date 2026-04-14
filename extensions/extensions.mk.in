@@ -8,6 +8,8 @@ extensions_install_hdrs = \
 	runtime/spike_log_manager.h \
 	integration/spike_bootstrap.h \
 	checkpoint/checkpoint_controller.h \
+	checkpoint/checkpoint_files.h \
+	checkpoint/checkpoint_restore_rom.h \
 
 extensions_srcs = \
 	runtime/spike_device_observe_registry.cc \
@@ -15,6 +17,8 @@ extensions_srcs = \
 	runtime/spike_host_policy.cc \
 	runtime/spike_log_manager.cc \
 	integration/spike_bootstrap.cc \
+	checkpoint/checkpoint_files.cc \
+	checkpoint/checkpoint_restore_rom.cc \
 
 extensions_test_srcs = \
 	runtime/dispatcher-defaults.t.cc \
@@ -27,3 +31,5 @@ extensions_test_srcs = \
 	runtime/spike-host-policy.t.cc \
 	integration/spike-bootstrap-api.t.cc \
 	checkpoint/checkpoint-controller-api.t.cc \
+	checkpoint/checkpoint-files.t.cc \
+	checkpoint/checkpoint-restore-rom.t.cc \
