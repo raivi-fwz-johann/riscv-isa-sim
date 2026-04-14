@@ -1,5 +1,6 @@
 #pragma once
 
+#include "checkpoint/checkpoint_controller.h"
 #include "runtime/spike_host_policy.h"
 #include "runtime/spike_log_manager.h"
 #include "runtime/spike_hook_dispatcher.h"
@@ -18,8 +19,14 @@ public:
   spike_host_policy_t* host_policy() const { return host_policy_.get(); }
   void set_host_policy(std::unique_ptr<spike_host_policy_t> host_policy) { host_policy_ = std::move(host_policy); }
 
+  checkpoint_controller_t* checkpoint_controller() const { return checkpoint_controller_.get(); }
+  void set_checkpoint_controller(std::unique_ptr<checkpoint_controller_t> controller) {
+    checkpoint_controller_ = std::move(controller);
+  }
+
 private:
   std::unique_ptr<spike_hook_dispatcher_t> hook_dispatcher_;
   std::unique_ptr<spike_log_manager_t> log_manager_;
   std::unique_ptr<spike_host_policy_t> host_policy_;
+  std::unique_ptr<checkpoint_controller_t> checkpoint_controller_;
 };
