@@ -2,23 +2,54 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <sys/wait.h>
+#include <vector>
 
 namespace fs = std::filesystem;
 
 namespace {
 
-constexpr const char* kGcc = "/usr/bin/riscv64-linux-gnu-gcc";
+constexpr int kCompileTimeoutSec = 30;
+constexpr int kRunTimeoutSec = 90;
 
-fs::path spike_bin()
+enum class cmd_status_t
 {
-  return fs::path("/workspace/johann/code/spike-diff/.worktrees/master-checkpoint/riscv-isa-sim-master/interface/build/thirdparty/riscv-isa-sim/bin/spike");
+  ok,
+  failed,
+  timed_out,
+};
+
+std::string sh_quote(std::string_view arg)
+{
+  std::string out;
+  out.reserve(arg.size() + 2);
+  out.push_back('\'');
+  for (const char c : arg) {
+    if (c == '\'') {
+      out += "'\\''";
+    } else {
+      out.push_back(c);
+    }
+  }
+  out.push_back('\'');
+  return out;
 }
 
-std::string q(const fs::path& path)
+std::string join_argv(const std::vector<std::string>& argv)
 {
-  return "'" + path.string() + "'";
+  std::string cmd;
+  for (size_t i = 0; i < argv.size(); ++i) {
+    if (i != 0) {
+      cmd.push_back(' ');
+    }
+    cmd += sh_quote(argv[i]);
+  }
+  return cmd;
 }
 
 fs::path write_file(const fs::path& path, const std::string& contents)
@@ -32,10 +63,95 @@ fs::path write_file(const fs::path& path, const std::string& contents)
   return path;
 }
 
-bool run_cmd(const std::string& cmd)
+cmd_status_t run_cmd_with_timeout(const std::string& cmd, int timeout_sec)
 {
-  const int rc = std::system(cmd.c_str());
-  return rc == 0;
+  const std::string wrapped = "timeout --foreground --signal=TERM --kill-after=2s " +
+                              std::to_string(timeout_sec) + "s /bin/bash -lc " + sh_quote(cmd);
+  const int rc = std::system(wrapped.c_str());
+  if (rc == 0) {
+    return cmd_status_t::ok;
+  }
+  if (rc == -1) {
+    return cmd_status_t::failed;
+  }
+  if (WIFEXITED(rc)) {
+    const int exit_code = WEXITSTATUS(rc);
+    if (exit_code == 124 || exit_code == 137) {
+      return cmd_status_t::timed_out;
+    }
+  }
+  return cmd_status_t::failed;
+}
+
+int run_checked(const std::string& cmd, int fail_rc, int timeout_rc)
+{
+  switch (run_cmd_with_timeout(cmd, kRunTimeoutSec)) {
+    case cmd_status_t::ok:
+      return 0;
+    case cmd_status_t::timed_out:
+      std::cerr << "timeout: " << cmd << std::endl;
+      return timeout_rc;
+    case cmd_status_t::failed:
+      return fail_rc;
+  }
+  return fail_rc;
+}
+
+bool is_executable_file(const fs::path& path)
+{
+  std::error_code ec;
+  const auto status = fs::status(path, ec);
+  if (ec || !fs::is_regular_file(status)) {
+    return false;
+  }
+  const auto perms = status.permissions();
+  return (perms & fs::perms::owner_exec) != fs::perms::none ||
+         (perms & fs::perms::group_exec) != fs::perms::none ||
+         (perms & fs::perms::others_exec) != fs::perms::none;
+}
+
+std::optional<fs::path> find_in_path(const std::string& name)
+{
+  const char* path_env = std::getenv("PATH");
+  if (!path_env || *path_env == '\0') {
+    return std::nullopt;
+  }
+
+  std::stringstream ss(path_env);
+  std::string segment;
+  while (std::getline(ss, segment, ':')) {
+    const fs::path base = segment.empty() ? fs::path(".") : fs::path(segment);
+    const fs::path candidate = base / name;
+    if (is_executable_file(candidate)) {
+      return candidate;
+    }
+  }
+  return std::nullopt;
+}
+
+std::string riscv_gcc()
+{
+  if (const char* override = std::getenv("RISCV_GCC"); override && *override) {
+    return std::string(override);
+  }
+  if (auto found = find_in_path("riscv64-linux-gnu-gcc")) {
+    return found->string();
+  }
+  throw std::runtime_error("riscv64-linux-gnu-gcc not found; set RISCV_GCC");
+}
+
+fs::path spike_bin()
+{
+  if (const char* override = std::getenv("SPIKE_BIN"); override && *override) {
+    return fs::path(override);
+  }
+
+  std::error_code ec;
+  const fs::path self = fs::read_symlink("/proc/self/exe", ec);
+  if (ec) {
+    throw std::runtime_error("cannot resolve /proc/self/exe for spike path derivation");
+  }
+  return self.parent_path() / "thirdparty" / "riscv-isa-sim" / "bin" / "spike";
 }
 
 std::string bare_linker_script()
@@ -149,21 +265,36 @@ std::string multi_hart_program()
       "done:    .dword 0\n";
 }
 
-fs::path build_bare_elf(const fs::path& dir, const std::string& name, const std::string& source)
+int build_bare_elf(const fs::path& dir, const std::string& name, const std::string& source, fs::path& elf)
 {
   const fs::path ld = dir / (name + ".ld");
   const fs::path src = dir / (name + ".S");
-  const fs::path elf = dir / (name + ".elf");
+  elf = dir / (name + ".elf");
   write_file(ld, bare_linker_script());
   write_file(src, source);
 
-  const std::string cmd =
-      std::string(kGcc) + " -nostdlib -static -march=rv64imafd -mabi=lp64d -T " +
-      q(ld) + " -o " + q(elf) + " " + q(src);
-  if (!run_cmd(cmd)) {
-    throw std::runtime_error("failed to build " + elf.string());
+  const std::string cmd = join_argv({
+      riscv_gcc(),
+      "-nostdlib",
+      "-static",
+      "-march=rv64imafd",
+      "-mabi=lp64d",
+      "-T",
+      ld.string(),
+      "-o",
+      elf.string(),
+      src.string(),
+  });
+  switch (run_cmd_with_timeout(cmd, kCompileTimeoutSec)) {
+    case cmd_status_t::ok:
+      return 0;
+    case cmd_status_t::timed_out:
+      std::cerr << "timeout: " << cmd << std::endl;
+      return 2;
+    case cmd_status_t::failed:
+      return 1;
   }
-  return elf;
+  return 1;
 }
 
 bool artifact_set_exists(const fs::path& prefix)
@@ -189,20 +320,26 @@ bool artifact_set_absent(const fs::path& prefix)
 
 int test_bare_none_restore(const fs::path& dir)
 {
-  const fs::path elf = build_bare_elf(dir, "bare-none", single_hart_program());
+  fs::path elf;
+  if (const int build_rc = build_bare_elf(dir, "bare-none", single_hart_program(), elf)) {
+    return build_rc == 2 ? 15 : 14;
+  }
+
+  const fs::path spike = spike_bin();
   const fs::path prefix = dir / "snap-none";
   const fs::path other_prefix = dir / "snap-none-load";
 
-  const std::string run_save = spike_bin().string() + " --save=" + prefix.string() + " " + elf.string();
-  const std::string run_load = spike_bin().string() + " --load=" + prefix.string();
-  if (!run_cmd(run_save)) {
-    return 10;
+  const std::string run_save = join_argv({spike.string(), "--save=" + prefix.string(), elf.string()});
+  const std::string run_load =
+      join_argv({spike.string(), "--load=" + prefix.string(), "--save=" + other_prefix.string()});
+  if (const int rc = run_checked(run_save, 10, 16)) {
+    return rc;
   }
   if (!artifact_set_exists(prefix)) {
     return 11;
   }
-  if (!run_cmd(run_load)) {
-    return 12;
+  if (const int rc = run_checked(run_load, 12, 17)) {
+    return rc;
   }
   if (!artifact_set_absent(other_prefix)) {
     return 13;
@@ -212,21 +349,26 @@ int test_bare_none_restore(const fs::path& dir)
 
 int test_bare_overlay_restore(const fs::path& dir)
 {
-  const fs::path elf = build_bare_elf(dir, "bare-overlay", single_hart_program());
+  fs::path elf;
+  if (const int build_rc = build_bare_elf(dir, "bare-overlay", single_hart_program(), elf)) {
+    return build_rc == 2 ? 25 : 24;
+  }
+
+  const fs::path spike = spike_bin();
   const fs::path prefix = dir / "snap-overlay";
   const fs::path other_prefix = dir / "snap-overlay-load";
 
-  const std::string run_save = spike_bin().string() + " --save=" + prefix.string() + " " + elf.string();
+  const std::string run_save = join_argv({spike.string(), "--save=" + prefix.string(), elf.string()});
   const std::string run_load_overlay =
-      spike_bin().string() + " --load=" + prefix.string() + " " + elf.string();
-  if (!run_cmd(run_save)) {
-    return 20;
+      join_argv({spike.string(), "--load=" + prefix.string(), "--save=" + other_prefix.string(), elf.string()});
+  if (const int rc = run_checked(run_save, 20, 26)) {
+    return rc;
   }
   if (!artifact_set_exists(prefix)) {
     return 21;
   }
-  if (!run_cmd(run_load_overlay)) {
-    return 22;
+  if (const int rc = run_checked(run_load_overlay, 22, 27)) {
+    return rc;
   }
   if (!artifact_set_absent(other_prefix)) {
     return 23;
@@ -238,15 +380,25 @@ int test_bare_multihart_restore(const fs::path& dir);
 
 int test_bare_zstd_restore(const fs::path& dir)
 {
-  const fs::path elf = build_bare_elf(dir, "bare-zstd", single_hart_program());
+  fs::path elf;
+  if (const int build_rc = build_bare_elf(dir, "bare-zstd", single_hart_program(), elf)) {
+    return build_rc == 2 ? 46 : 45;
+  }
+
+  const fs::path spike = spike_bin();
   const fs::path prefix = dir / "snap-zstd";
   const fs::path other_prefix = dir / "snap-zstd-load";
 
-  const std::string run_save_zstd =
-      spike_bin().string() + " --compress-zstd --save=" + prefix.string() + " " + elf.string();
-  const std::string run_load_none = spike_bin().string() + " --load=" + prefix.string();
-  if (!run_cmd(run_save_zstd)) {
-    return 40;
+  const std::string run_save_zstd = join_argv({
+      spike.string(),
+      "--compress-zstd",
+      "--save=" + prefix.string(),
+      elf.string(),
+  });
+  const std::string run_load_none =
+      join_argv({spike.string(), "--load=" + prefix.string(), "--save=" + other_prefix.string()});
+  if (const int rc = run_checked(run_save_zstd, 40, 47)) {
+    return rc;
   }
   if (!artifact_set_exists(prefix)) {
     return 41;
@@ -254,8 +406,8 @@ int test_bare_zstd_restore(const fs::path& dir)
   if (!fs::exists(prefix.string() + ".mainram.zst")) {
     return 42;
   }
-  if (!run_cmd(run_load_none)) {
-    return 43;
+  if (const int rc = run_checked(run_load_none, 43, 48)) {
+    return rc;
   }
   if (!artifact_set_absent(other_prefix)) {
     return 44;
@@ -265,20 +417,26 @@ int test_bare_zstd_restore(const fs::path& dir)
 
 int test_bare_multihart_restore(const fs::path& dir)
 {
-  const fs::path elf = build_bare_elf(dir, "bare-multihart", multi_hart_program());
+  fs::path elf;
+  if (const int build_rc = build_bare_elf(dir, "bare-multihart", multi_hart_program(), elf)) {
+    return build_rc == 2 ? 35 : 34;
+  }
+
+  const fs::path spike = spike_bin();
   const fs::path prefix = dir / "snap-multihart";
   const fs::path other_prefix = dir / "snap-multihart-load";
 
-  const std::string run_save = spike_bin().string() + " -p2 --save=" + prefix.string() + " " + elf.string();
-  const std::string run_load = spike_bin().string() + " -p2 --load=" + prefix.string() + " " + elf.string();
-  if (!run_cmd(run_save)) {
-    return 30;
+  const std::string run_save = join_argv({spike.string(), "-p2", "--save=" + prefix.string(), elf.string()});
+  const std::string run_load =
+      join_argv({spike.string(), "-p2", "--load=" + prefix.string(), "--save=" + other_prefix.string(), elf.string()});
+  if (const int rc = run_checked(run_save, 30, 36)) {
+    return rc;
   }
   if (!artifact_set_exists(prefix)) {
     return 31;
   }
-  if (!run_cmd(run_load)) {
-    return 32;
+  if (const int rc = run_checked(run_load, 32, 37)) {
+    return rc;
   }
   if (!artifact_set_absent(other_prefix)) {
     return 33;
@@ -290,25 +448,36 @@ int test_bare_multihart_restore(const fs::path& dir)
 
 int main()
 {
-  const fs::path dir = fs::temp_directory_path() / "checkpoint-runtime-smoke";
-  fs::remove_all(dir);
-  fs::create_directories(dir);
+  try {
+    const fs::path spike = spike_bin();
+    if (!is_executable_file(spike)) {
+      std::cerr << "spike binary not found or not executable: " << spike << std::endl;
+      return 2;
+    }
 
-  if (const int rc = test_bare_none_restore(dir)) {
-    std::cerr << "test_bare_none_restore rc=" << rc << std::endl;
-    return rc;
+    const fs::path dir = fs::temp_directory_path() / "checkpoint-runtime-smoke";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+
+    if (const int rc = test_bare_none_restore(dir)) {
+      std::cerr << "test_bare_none_restore rc=" << rc << std::endl;
+      return rc;
+    }
+    if (const int rc = test_bare_overlay_restore(dir)) {
+      std::cerr << "test_bare_overlay_restore rc=" << rc << std::endl;
+      return rc;
+    }
+    if (const int rc = test_bare_multihart_restore(dir)) {
+      std::cerr << "test_bare_multihart_restore rc=" << rc << std::endl;
+      return rc;
+    }
+    if (const int rc = test_bare_zstd_restore(dir)) {
+      std::cerr << "test_bare_zstd_restore rc=" << rc << std::endl;
+      return rc;
+    }
+    return 0;
+  } catch (const std::exception& e) {
+    std::cerr << "fatal: " << e.what() << std::endl;
+    return 199;
   }
-  if (const int rc = test_bare_overlay_restore(dir)) {
-    std::cerr << "test_bare_overlay_restore rc=" << rc << std::endl;
-    return rc;
-  }
-  if (const int rc = test_bare_multihart_restore(dir)) {
-    std::cerr << "test_bare_multihart_restore rc=" << rc << std::endl;
-    return rc;
-  }
-  if (const int rc = test_bare_zstd_restore(dir)) {
-    std::cerr << "test_bare_zstd_restore rc=" << rc << std::endl;
-    return rc;
-  }
-  return 0;
 }
