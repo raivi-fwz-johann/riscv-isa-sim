@@ -222,17 +222,17 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
   data.has_tval2_ = false;
   data.tval2_ = 0;
 
-  data.m_Vpc = observed.pc;
-  data.m_InstrRaw = static_cast<uint32_t>(observed.bits);
-  data.m_Ppc = observed.paddr;
+  data.m_Pc = observed.pc;
+  data.m_Bits = observed.bits;
+  data.m_PPN = observed.paddr;
   data.m_PPN2 = observed.paddr2;
-  data.m_NextVpc = observed.npc == ERROR_PC_ADDR ? p->get_state()->pc : observed.npc;
-  if (!observed.in_trap && data.m_InstrRaw != 0) {
-    const auto inst_len = static_cast<uint64_t>(insn_t(data.m_InstrRaw).length());
-    const auto page0 = std::min<uint64_t>(inst_len, PGSIZE - (data.m_Vpc % PGSIZE));
+  data.m_NPc = observed.npc == ERROR_PC_ADDR ? p->get_state()->pc : observed.npc;
+  if (!observed.in_trap && data.m_Bits != 0) {
+    const auto inst_len = static_cast<uint64_t>(insn_t(data.m_Bits).length());
+    const auto page0 = std::min<uint64_t>(inst_len, PGSIZE - (data.m_Pc % PGSIZE));
     if (page0 != inst_len) {
       try {
-        data.m_PPN2 = p->get_mmu()->vaddr2paddr(data.m_Vpc + page0, 1, FETCH);
+        data.m_PPN2 = p->get_mmu()->vaddr2paddr(data.m_Pc + page0, 1, FETCH);
       } catch (...) {
         data.m_PPN2 = ERROR_PC_ADDR;
       }
@@ -252,7 +252,7 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
     data.m_mmuTrace.excp_cause = observed.cause;
   }
   data.m_FetchPtw.clear();
-  auto walked_fetch_ptw = build_ptw(m_Simulator.get(), p, data.m_Vpc);
+  auto walked_fetch_ptw = build_ptw(m_Simulator.get(), p, data.m_Pc);
   if (!walked_fetch_ptw.empty()) {
     data.m_FetchPtw = std::move(walked_fetch_ptw);
   } else {
@@ -263,7 +263,7 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
     }
   }
   data.m_SrcRegs.clear();
-  decode_src_regs(data.m_InstrRaw, data.m_SrcRegs);
+  decode_src_regs(data.m_Bits, data.m_SrcRegs);
   data.m_DstRegs.clear();
   data.m_VType = p->VU.vtype ? p->VU.vtype->read() : 0;
   data.m_Vl = p->VU.vl ? p->VU.vl->read() : 0;
@@ -280,8 +280,8 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
   data.m_MemOps.clear();
   data.m_BranchTaken =
       !observed.in_trap &&
-      data.m_NextVpc != ERROR_PC_ADDR &&
-      data.m_NextVpc != data.m_Vpc + static_cast<uint64_t>(insn_t(data.m_InstrRaw).length());
+      data.m_NPc != ERROR_PC_ADDR &&
+      data.m_NPc != data.m_Pc + static_cast<uint64_t>(insn_t(data.m_Bits).length());
   data.m_Exception = observed.in_trap ? static_cast<uint32_t>(observed.cause) : 0;
 
 #if defined (FULL_TRACE) || defined (MEM_TRACE)

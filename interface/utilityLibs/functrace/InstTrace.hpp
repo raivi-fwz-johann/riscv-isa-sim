@@ -237,7 +237,7 @@ public:
     return TrapInfo{.cause = cause_, .tval = tval_, .tval2 = tval2_, .in_trap = m_InTrap, .has_tval2 = has_tval2_};
   }
 
-  void SetNPC(uint64_t npc) { m_NextVpc = npc; }
+  void SetNPC(uint64_t npc) { m_NPc = npc; }
 
  public:
   MmuTrace m_mmuTrace;
@@ -245,10 +245,9 @@ public:
   void free();
 
   uint64_t m_Id = 0;
-  uint64_t m_Vpc = ERROR_PC_ADDR;
-  uint64_t m_Ppc = ERROR_PC_ADDR;
-  uint64_t m_NextVpc = ERROR_PC_ADDR;
-  uint32_t m_InstrRaw = 0;
+  uint64_t m_Pc = ERROR_PC_ADDR;   // vpc
+  uint64_t m_NPc = ERROR_PC_ADDR;  // next_vpc
+  uint64_t m_Bits = 0;             // instr_raw
   struct PPN_t {
     uint64_t val = ERROR_PC_ADDR;
     PPN_t() = default;
@@ -270,7 +269,7 @@ public:
     bool operator!=(uint64_t val) const {
       return this->val != val;
     }
-  };
+  } m_PPN;  // ppc
   PPN_t m_PPN2;
   std::vector<PTWStep> m_FetchPtw;
   std::vector<RegValue> m_SrcRegs;
@@ -324,7 +323,7 @@ public:
   InstTraceModifier(InstTrace &inst) : inst_(inst) {}
 
   void setNpc(uint64_t val) {
-    inst_.m_NextVpc = val;
+    inst_.m_NPc = val;
   }
   void clearRegWrites() {
 #if defined (FULL_TRACE)
