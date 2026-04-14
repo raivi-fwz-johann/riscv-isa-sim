@@ -1,5 +1,7 @@
 #include "integration/spike_bootstrap.h"
+#include "checkpoint/checkpoint_restore_rom.h"
 #include "sim.h"
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -31,6 +33,30 @@ int main()
   static_assert(std::is_same_v<
       decltype(std::declval<spike_boot_options_t>().checkpoint.snapshot_compress),
       bool>);
+
+  {
+    const char* argv_raw[] = {"spike", "--save=snap-save", "pk", nullptr};
+    auto options = spike_parse_argv_options(
+        3,
+        const_cast<char**>(argv_raw));
+    if (options.checkpoint.snapshot_save_name == nullptr) return 10;
+    if (std::string(options.checkpoint.snapshot_save_name) != "snap-save")
+      return 11;
+  }
+
+  {
+    const char* argv_raw[] = {"spike", "--load=snap-load", nullptr};
+    auto options = spike_parse_argv_options(
+        2,
+        const_cast<char**>(argv_raw));
+    if (options.checkpoint.snapshot_load_name == nullptr) return 20;
+    if (std::string(options.checkpoint.snapshot_load_name) != "snap-load")
+      return 21;
+    if (options.htif_args.empty()) return 22;
+    if (options.htif_args.front() != "none") return 23;
+    if (!options.cfg.start_pc.has_value()) return 24;
+    if (*options.cfg.start_pc != kCheckpointBootromBase) return 25;
+  }
 
   return 0;
 }
