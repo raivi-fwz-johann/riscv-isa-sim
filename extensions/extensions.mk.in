@@ -1,4 +1,10 @@
-extensions_subproject_deps =
+extensions_subproject_deps = \
+	extensions \
+	fdt \
+	softfloat \
+	disasm \
+	fesvr \
+	riscv \
 
 extensions_install_hdrs = \
 	runtime/spike_hook_dispatcher.h \

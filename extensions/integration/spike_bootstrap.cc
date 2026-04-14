@@ -88,6 +88,10 @@ static void help(int exit_code = 1)
   fprintf(stderr, "  --blocksz=<size>      Cache block size (B) for CMO operations(powers of 2) [default 64]\n");
   fprintf(stderr, "  --instructions=<n>    Stop after n instructions\n");
   fprintf(stderr, "  --step=<interleave>   Set interleave for step in spike simulation\n");
+  fprintf(stderr, "  --save=<name>         Save checkpoint files with prefix <name>\n");
+  fprintf(stderr, "  --load=<name>         Load checkpoint files with prefix <name>\n");
+  fprintf(stderr, "  --compress            Compress checkpoint mainram as .zip\n");
+  fprintf(stderr, "  --compress-zstd       Compress checkpoint mainram as .zst\n");
 
   exit(exit_code);
 }
