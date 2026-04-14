@@ -5,6 +5,22 @@
 #include <iostream>
 #include <list>
 
+static std::string shell_quote(const std::string& value)
+{
+  std::string quoted;
+  quoted.reserve(value.size() + 2);
+  quoted.push_back('\'');
+  for (char ch : value) {
+    if (ch == '\'') {
+      quoted += "'\"'\"'";
+    } else {
+      quoted.push_back(ch);
+    }
+  }
+  quoted.push_back('\'');
+  return quoted;
+}
+
 checkpoint_paths_t checkpoint_paths_t::from_prefix(const std::string& prefix)
 {
   checkpoint_paths_t paths;
@@ -107,9 +123,10 @@ void compress_checkpoint_mainram(
   std::string command;
   const std::string source_file = source.string();
   if (config.snapshot_compress) {
-    command = "zip -qjm " + source_file + ".zip " + source_file;
+    command = "zip -qjm " + shell_quote(source_file + ".zip") + " " +
+              shell_quote(source_file);
   } else if (config.snapshot_compress_zstd) {
-    command = "zstd --rm -T0 -q " + source_file;
+    command = "zstd --rm -T0 -q " + shell_quote(source_file);
   } else {
     return;
   }
@@ -132,10 +149,11 @@ void decompress_checkpoint_mainram(
   const std::string source_file = source.string();
   const std::string output_directory = output_dir.string();
   if (config.snapshot_compress) {
-    command = "unzip -o " + source_file + " -d " + output_directory;
+    command = "unzip -o " + shell_quote(source_file) + " -d " +
+              shell_quote(output_directory);
   } else if (config.snapshot_compress_zstd) {
-    command = "zstd -dfq -T0 " + source_file +
-              " --output-dir-flat=" + output_directory;
+    command = "zstd -dfq -T0 " + shell_quote(source_file) +
+              " --output-dir-flat=" + shell_quote(output_directory);
   } else {
     return;
   }
