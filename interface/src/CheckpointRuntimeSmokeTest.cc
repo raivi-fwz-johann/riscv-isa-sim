@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <sys/wait.h>
+#include <utility>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -16,6 +17,7 @@ namespace {
 
 constexpr int kCompileTimeoutSec = 30;
 constexpr int kRunTimeoutSec = 90;
+constexpr int kPkBuildTimeoutSec = 600;
 
 enum class cmd_status_t
 {
@@ -61,6 +63,17 @@ fs::path write_file(const fs::path& path, const std::string& contents)
   out << contents;
   out.close();
   return path;
+}
+
+std::string read_file(const fs::path& path)
+{
+  std::ifstream in(path);
+  if (!in.is_open()) {
+    throw std::runtime_error("cannot open " + path.string());
+  }
+  std::ostringstream ss;
+  ss << in.rdbuf();
+  return ss.str();
 }
 
 cmd_status_t run_cmd_with_timeout(const std::string& cmd, int timeout_sec)
@@ -152,6 +165,138 @@ fs::path spike_bin()
     throw std::runtime_error("cannot resolve /proc/self/exe for spike path derivation");
   }
   return self.parent_path() / "thirdparty" / "riscv-isa-sim" / "bin" / "spike";
+}
+
+fs::path pk_build_dir()
+{
+  return "/workspace/johann/code/riscv-pk/build-spike-master-ckpt";
+}
+
+fs::path pk_source_dir()
+{
+  return pk_build_dir() / "pk-source";
+}
+
+fs::path pk_bin()
+{
+  const fs::path nested = pk_build_dir() / "pk" / "pk";
+  if (is_executable_file(nested)) {
+    return nested;
+  }
+  return pk_build_dir() / "pk";
+}
+
+void prepare_pk_source_tree()
+{
+  if (fs::exists(pk_source_dir() / "configure")) {
+    return;
+  }
+
+  fs::create_directories(pk_build_dir());
+  const std::string copy_cmd =
+      "rm -rf " + sh_quote(pk_source_dir().string()) + " && mkdir -p " + sh_quote(pk_source_dir().string()) +
+      " && rsync -a --exclude " + sh_quote("build-spike-master-ckpt/") + " " +
+      sh_quote("/workspace/johann/code/riscv-pk/") + " " + sh_quote(pk_source_dir().string()) + "/";
+  switch (run_cmd_with_timeout(copy_cmd, kPkBuildTimeoutSec)) {
+    case cmd_status_t::ok:
+      break;
+    case cmd_status_t::timed_out:
+      throw std::runtime_error("pk source copy timed out");
+    case cmd_status_t::failed:
+      throw std::runtime_error("pk source copy failed");
+  }
+}
+
+void apply_pk_compat_patch()
+{
+  const fs::path minit = pk_source_dir() / "machine" / "minit.c";
+  {
+    std::string contents = read_file(minit);
+    const std::string old_line =
+        "  write_csr(menvcfg, MENVCFG_SSE | MENVCFG_CBCFE | INSERT_FIELD(0, MENVCFG_CBIE, 1));";
+    const std::string new_line =
+        "  asm volatile (\"csrw 0x30a, %0\" :: \"rK\"(MENVCFG_SSE | MENVCFG_CBCFE | "
+        "INSERT_FIELD(0, MENVCFG_CBIE, 1)));";
+    const size_t pos = contents.find(old_line);
+    if (pos != std::string::npos) {
+      contents.replace(pos, old_line.size(), new_line);
+      write_file(minit, contents);
+    } else if (contents.find(new_line) == std::string::npos) {
+      throw std::runtime_error("pk menvcfg compatibility patch point not found");
+    }
+  }
+
+  const fs::path pk_c = pk_source_dir() / "pk" / "pk.c";
+  {
+    std::string contents = read_file(pk_c);
+    const std::vector<std::pair<std::string, std::string>> rewrites = {
+        {
+            "    set_csr(senvcfg, SENVCFG_SSE);",
+            "    asm volatile (\"csrs 0x10a, %0\" :: \"rK\"(SENVCFG_SSE));",
+        },
+        {
+            "  set_csr(senvcfg, SENVCFG_CBCFE | INSERT_FIELD(0, SENVCFG_CBIE, 1));",
+            "  asm volatile (\"csrs 0x10a, %0\" :: \"rK\"(SENVCFG_CBCFE | INSERT_FIELD(0, SENVCFG_CBIE, 1)));",
+        },
+        {
+            "    set_csr(senvcfg, SENVCFG_LPE);",
+            "    asm volatile (\"csrs 0x10a, %0\" :: \"rK\"(SENVCFG_LPE));",
+        },
+    };
+
+    for (const auto& rewrite : rewrites) {
+      const size_t pos = contents.find(rewrite.first);
+      if (pos != std::string::npos) {
+        contents.replace(pos, rewrite.first.size(), rewrite.second);
+      } else if (contents.find(rewrite.second) == std::string::npos) {
+        throw std::runtime_error("pk senvcfg compatibility patch point not found");
+      }
+    }
+    write_file(pk_c, contents);
+  }
+}
+
+void ensure_pk_built()
+{
+  if (is_executable_file(pk_bin())) {
+    return;
+  }
+
+  std::string host = "riscv64-unknown-linux-gnu";
+  const std::string gcc_name = fs::path(riscv_gcc()).filename().string();
+  if (gcc_name.size() > 4 && gcc_name.rfind("-gcc") == gcc_name.size() - 4) {
+    host = gcc_name.substr(0, gcc_name.size() - 4);
+  }
+
+  prepare_pk_source_tree();
+  apply_pk_compat_patch();
+
+  const std::string configure_cmd =
+      "cd " + sh_quote(pk_build_dir().string()) + " && " +
+      join_argv({(pk_source_dir() / "configure").string(), "--host=" + host});
+  const std::string build_cmd = "cd " + sh_quote(pk_build_dir().string()) + " && " + join_argv({"make", "-j4"});
+
+  switch (run_cmd_with_timeout(configure_cmd, kPkBuildTimeoutSec)) {
+    case cmd_status_t::ok:
+      break;
+    case cmd_status_t::timed_out:
+      throw std::runtime_error("pk configure timed out");
+    case cmd_status_t::failed:
+      throw std::runtime_error("pk configure failed");
+  }
+
+  switch (run_cmd_with_timeout(build_cmd, kPkBuildTimeoutSec)) {
+    case cmd_status_t::ok:
+      break;
+    case cmd_status_t::timed_out:
+      throw std::runtime_error("pk build timed out");
+    case cmd_status_t::failed:
+      throw std::runtime_error("pk build failed");
+  }
+
+  if (!is_executable_file(pk_bin())) {
+    throw std::runtime_error("pk binary missing after build");
+  }
 }
 
 std::string bare_linker_script()
@@ -297,6 +442,49 @@ int build_bare_elf(const fs::path& dir, const std::string& name, const std::stri
   return 1;
 }
 
+fs::path build_pk_user_elf(const fs::path& dir, const std::string& name, const std::string& source)
+{
+  const fs::path src = dir / (name + ".c");
+  const fs::path elf = dir / (name + ".elf");
+  write_file(src, source);
+
+  const std::string cmd =
+      join_argv({riscv_gcc(), "-static", "-O2", "-o", elf.string(), src.string()});
+  switch (run_cmd_with_timeout(cmd, kCompileTimeoutSec)) {
+    case cmd_status_t::ok:
+      return elf;
+    case cmd_status_t::timed_out:
+      std::cerr << "timeout: " << cmd << std::endl;
+      throw std::runtime_error("failed to build pk user elf (timed out)");
+    case cmd_status_t::failed:
+      throw std::runtime_error("failed to build pk user elf");
+  }
+  throw std::runtime_error("failed to build pk user elf");
+}
+
+std::string pk_user_program()
+{
+  return
+      "#include <stdint.h>\n"
+      "#include <unistd.h>\n"
+      "\n"
+      "volatile uint64_t progress = 0;\n"
+      "\n"
+      "int main(void) {\n"
+      "  static const char msg[] = \"pk-finished\\n\";\n"
+      "  while (progress < 100000) {\n"
+      "    progress++;\n"
+      "  }\n"
+      "  while (progress < 1100000) {\n"
+      "    if (write(1, msg, sizeof(msg) - 1) < 0) {\n"
+      "      return 1;\n"
+      "    }\n"
+      "    progress++;\n"
+      "  }\n"
+      "  return 0;\n"
+      "}\n";
+}
+
 bool artifact_set_exists(const fs::path& prefix)
 {
   const fs::path bootram = prefix.string() + ".bootram";
@@ -309,6 +497,61 @@ bool artifact_set_exists(const fs::path& prefix)
   const int mainram_count =
       (fs::exists(mainram) ? 1 : 0) + (fs::exists(mainram_zip) ? 1 : 0) + (fs::exists(mainram_zst) ? 1 : 0);
   return fs::exists(bootram) && mainram_count == 1 && fs::exists(htif) && fs::exists(regs);
+}
+
+bool artifact_set_uses_legacy_names_only(const fs::path& prefix)
+{
+  const std::string base = prefix.filename().string();
+  const fs::path dir = prefix.parent_path();
+  if (!fs::exists(dir)) {
+    return false;
+  }
+
+  const std::vector<std::string> allowed = {
+      ".bootram",
+      ".mainram",
+      ".mainram.zip",
+      ".mainram.zst",
+      ".htif",
+      ".re_regs",
+  };
+
+  for (const auto& entry : fs::directory_iterator(dir)) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+    const std::string name = entry.path().filename().string();
+    if (name.rfind(base + ".", 0) != 0) {
+      continue;
+    }
+
+    bool ok = false;
+    for (const auto& suffix : allowed) {
+      if (name == base + suffix) {
+        ok = true;
+        break;
+      }
+    }
+    if (!ok) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool file_contains_text(const fs::path& path, std::string_view needle)
+{
+  std::ifstream in(path);
+  if (!in.is_open()) {
+    return false;
+  }
+  std::string line;
+  while (std::getline(in, line)) {
+    if (line.find(needle) != std::string::npos) {
+      return true;
+    }
+  }
+  return false;
 }
 
 std::optional<std::string> read_saved_pc(const fs::path& prefix)
@@ -404,6 +647,97 @@ int test_bare_overlay_restore(const fs::path& dir)
   return 0;
 }
 
+int test_pk_single_restore(const fs::path& dir)
+{
+  const fs::path user_elf = build_pk_user_elf(dir, "pk-single-user", pk_user_program());
+  const fs::path spike = spike_bin();
+  const fs::path prefix = dir / "snap-pk-single";
+  const fs::path save_log = dir / "snap-pk-single-save.log";
+  const fs::path log = dir / "snap-pk-single-load.log";
+
+  const std::string pk_save = join_argv({
+                                  spike.string(),
+                                  "--instructions=4000000",
+                                  "--save=" + prefix.string(),
+                                  pk_bin().string(),
+                                  user_elf.string(),
+                              }) +
+                              " >" + sh_quote(save_log.string()) + " 2>&1";
+  // Load-only restore shape avoids replaying a fresh pk bootstrap path.
+  const std::string pk_load = join_argv({
+                                  spike.string(),
+                                  "--instructions=50000",
+                                  "--load=" + prefix.string(),
+                              }) +
+                              " >" + sh_quote(log.string()) + " 2>&1";
+
+  if (const int rc = run_checked(pk_save, 50, 56)) {
+    return rc;
+  }
+  if (!artifact_set_exists(prefix)) {
+    return 51;
+  }
+  if (!artifact_set_uses_legacy_names_only(prefix)) {
+    return 52;
+  }
+  if (const int rc = run_checked(pk_load, 53, 57)) {
+    return rc;
+  }
+  if (file_contains_text(log, "assertion failed")) {
+    return 55;
+  }
+  if (!file_contains_text(log, "pk-finished")) {
+    return 54;
+  }
+  return 0;
+}
+
+int test_pk_multihart_restore(const fs::path& dir)
+{
+  const fs::path user_elf = build_pk_user_elf(dir, "pk-p2-user", pk_user_program());
+  const fs::path spike = spike_bin();
+  const fs::path prefix = dir / "snap-pk-p2";
+  const fs::path save_log = dir / "snap-pk-p2-save.log";
+  const fs::path log = dir / "snap-pk-p2-load.log";
+
+  const std::string pk_save = join_argv({
+                                  spike.string(),
+                                  "-p2",
+                                  "--instructions=4000000",
+                                  "--save=" + prefix.string(),
+                                  pk_bin().string(),
+                                  user_elf.string(),
+                              }) +
+                              " >" + sh_quote(save_log.string()) + " 2>&1";
+  const std::string pk_load = join_argv({
+                                  spike.string(),
+                                  "-p2",
+                                  "--instructions=50000",
+                                  "--load=" + prefix.string(),
+                              }) +
+                              " >" + sh_quote(log.string()) + " 2>&1";
+
+  if (const int rc = run_checked(pk_save, 60, 66)) {
+    return rc;
+  }
+  if (!artifact_set_exists(prefix)) {
+    return 61;
+  }
+  if (!artifact_set_uses_legacy_names_only(prefix)) {
+    return 62;
+  }
+  if (const int rc = run_checked(pk_load, 63, 67)) {
+    return rc;
+  }
+  if (file_contains_text(log, "assertion failed")) {
+    return 65;
+  }
+  if (!file_contains_text(log, "pk-finished")) {
+    return 64;
+  }
+  return 0;
+}
+
 int test_bare_multihart_restore(const fs::path& dir);
 
 int test_bare_zstd_restore(const fs::path& dir)
@@ -493,6 +827,16 @@ int main()
     fs::remove_all(dir);
     fs::create_directories(dir);
 
+    ensure_pk_built();
+
+    if (const int rc = test_pk_single_restore(dir)) {
+      std::cerr << "test_pk_single_restore rc=" << rc << std::endl;
+      return rc;
+    }
+    if (const int rc = test_pk_multihart_restore(dir)) {
+      std::cerr << "test_pk_multihart_restore rc=" << rc << std::endl;
+      return rc;
+    }
     if (const int rc = test_bare_none_restore(dir)) {
       std::cerr << "test_bare_none_restore rc=" << rc << std::endl;
       return rc;
