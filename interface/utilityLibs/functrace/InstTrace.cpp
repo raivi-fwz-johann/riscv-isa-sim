@@ -76,7 +76,7 @@ MemWrite::MemWrite(uint64_t VAddr, size_t Bytes, uint64_t Val, uint64_t PAddr, u
 InstTrace::InstTrace(uint64_t Id) : m_Id(Id) {}
 
 InstTrace::InstTrace(uint64_t Id, uint64_t pc, uint64_t Bits, uint64_t PPN) 
-    : m_Id(Id), m_Vpc(pc), m_Ppc(PPN), m_InstrRaw(static_cast<uint32_t>(Bits)) {}
+    : m_Id(Id), m_Pc(pc), m_Bits(Bits), m_PPN(PPN) {}
 
 
 InstTrace::~InstTrace() { free(); }
@@ -99,38 +99,38 @@ bool InstTrace::isLoad() const { return false; }
 bool InstTrace::isStore() const { return false; }
 #endif
 
-uint64_t InstTrace::getPc() const { return m_Vpc; }
+uint64_t InstTrace::getPc() const { return m_Pc; }
 
 uint64_t InstTrace::getPcPAddr() const {
-  return m_Ppc;
+  return m_PPN.val;
 }
 
 uint64_t InstTrace::getPcPAddr2() const { return m_PPN2.val; }
 
 uint64_t InstTrace::getNPc() const {
-  return m_NextVpc;
+  return m_NPc;
 }
 
 uint64_t InstTrace::getBits() const {
-  return m_InstrRaw;
+  return m_Bits;
 }
 
 uint32_t InstTrace::getInstLen() const {
-  return insn_length(m_InstrRaw);
+  return insn_length(m_Bits);
 }
 
 bool InstTrace::inTrap() const { return m_InTrap; }
 
 bool InstTrace::inWFI() const { return m_InWFI; }
 
-bool InstTrace::perfect() const { return m_Ppc != ERROR_PC_ADDR; }
+bool InstTrace::perfect() const { return m_PPN != ERROR_PC_ADDR; }
 
 void InstTrace::reset() {
   m_Id = 0;
-  m_Vpc = ERROR_PC_ADDR;
-  m_Ppc = ERROR_PC_ADDR;
-  m_NextVpc = ERROR_PC_ADDR;
-  m_InstrRaw = 0;
+  m_Pc = ERROR_PC_ADDR;
+  m_NPc = ERROR_PC_ADDR;
+  m_Bits = 0;
+  m_PPN = ERROR_PC_ADDR;
   m_PPN2 = ERROR_PC_ADDR;
   m_FetchPtw.clear();
   m_SrcRegs.clear();
@@ -160,8 +160,8 @@ void InstTrace::reset() {
 }
 
 void InstTrace::free() {
-  m_InstrRaw = 0;
-  m_Ppc = ERROR_PC_ADDR;
+  m_Bits = 0;
+  m_PPN = ERROR_PC_ADDR;
   m_PPN2 = ERROR_PC_ADDR;
 }
 

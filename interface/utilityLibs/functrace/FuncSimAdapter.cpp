@@ -161,8 +161,8 @@ InstUserPtr FuncSimAdapter::reqInst(uint32_t CId) {
     holder.setInDummyHead(false); /* After reqInst means a step, to be optimized. */
   }
 
-  if (res && res->m_NextVpc == ERROR_PC_ADDR) {
-    throw std::runtime_error("res && res->m_NextVpc == ERROR_PC_ADDR");
+  if (res && res->m_NPc == ERROR_PC_ADDR) {
+    throw std::runtime_error("res && res->m_NPc == ERROR_PC_ADDR");
   }
   return res;
 }
@@ -229,18 +229,18 @@ InstTrace FuncSimAdapter::fetchInstOnly(uint64_t Pc, uint32_t CId, uint64_t IId)
   if (not res.perfect()) {
     auto ptr = m_CoreInfos[CId].m_IHolder.getByPc(Pc);
     if (ptr) {
-      res.m_InstrRaw = static_cast<uint32_t>(ptr->getBits());
-      res.m_Ppc = ptr->getPcPAddr();
-      res.m_NextVpc = ptr->getNPc();
+      res.m_Bits = ptr->getBits();
+      res.m_PPN = ptr->getPcPAddr();
+      res.m_NPc = ptr->getNPc();
     } else {
-      res.m_InstrRaw = 0x1;
-      res.m_NextVpc = res.m_Vpc + insn_length(res.m_InstrRaw);
+      res.m_Bits = 0x1;
+      res.m_NPc = res.m_Pc + insn_length(res.m_Bits);
     }
   } else {
-    res.m_NextVpc = res.m_Vpc + insn_length(res.m_InstrRaw);
+    res.m_NPc = res.m_Pc + insn_length(res.m_Bits);
   }
-  if (res.m_NextVpc == ERROR_PC_ADDR) {
-    throw std::runtime_error("res.m_NextVpc == ERROR_PC_ADDR");
+  if (res.m_NPc == ERROR_PC_ADDR) {
+    throw std::runtime_error("res.m_NPc == ERROR_PC_ADDR");
   }
   return res;
 }
