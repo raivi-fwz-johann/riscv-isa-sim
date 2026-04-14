@@ -25,6 +25,12 @@ int main()
   static_assert(std::is_same_v<
       decltype(std::declval<spike_boot_options_t>().step_interleave),
       size_t>);
+  static_assert(std::is_same_v<
+      decltype(std::declval<spike_boot_options_t>().checkpoint.snapshot_load_name),
+      const char*>);
+  static_assert(std::is_same_v<
+      decltype(std::declval<spike_boot_options_t>().checkpoint.snapshot_compress),
+      bool>);
 
   return 0;
 }

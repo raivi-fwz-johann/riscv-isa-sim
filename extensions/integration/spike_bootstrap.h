@@ -1,5 +1,6 @@
 #pragma once
 
+#include "checkpoint/checkpoint_controller.h"
 #include "cfg.h"
 #include "sim.h"
 #include "cachesim.h"
@@ -36,6 +37,7 @@ struct spike_boot_options_t {
   unsigned dmi_rti = 0;
   std::optional<unsigned long long> instructions;
   FILE* cmd_file = nullptr;
+  checkpoint_legacy_config_t checkpoint;
   cfg_t cfg;
   cfg_arg_t<size_t> nprocs = cfg_arg_t<size_t>(1);
   debug_module_config_t dm_config;
