@@ -74,15 +74,10 @@ public:
   clint_t* get_clint() const { return clint.get(); }
   const std::string& get_dtb() const { return dtb; }
   const std::vector<std::pair<reg_t, abstract_mem_t*>>& get_mems() const { return mems; }
+  void request_checkpoint_save();
 
   // Callback for processors to let the simulation know they were reset.
   virtual void proc_reset(unsigned id) override;
-
-  // Post-reset callback: invoked after set_rom() in reset(), used by
-  // checkpoint to load RAM after ELF has been loaded into memory.
-  void set_post_reset_callback(std::function<void()> cb) { post_reset_cb = std::move(cb); }
-  void set_checkpoint_save_on_trigger(bool value) { checkpoint_save_on_trigger = value; }
-  virtual void request_checkpoint_save() override;
   size_t INTERLEAVE;
   static const size_t INSNS_PER_RTC_TICK = 100; // 10 MHz clock for 1 BIPS core
   static const size_t CPU_HZ = 1000000000; // 1GHz CPU
@@ -111,8 +106,6 @@ private:
 
   socketif_t *socketif;
   std::ostream sout_; // used for socket and terminal interface
-  std::function<void()> post_reset_cb;
-  bool checkpoint_save_on_trigger = false;
   bool checkpoint_save_requested = false;
 
   processor_t* get_core(const std::string& i);

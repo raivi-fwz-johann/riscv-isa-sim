@@ -385,15 +385,6 @@ void sim_t::set_procs_debug(bool value)
     procs[i]->set_debug(value);
 }
 
-void sim_t::request_checkpoint_save()
-{
-  if (!checkpoint_save_on_trigger || checkpoint_save_requested)
-    return;
-
-  checkpoint_save_requested = true;
-  htif_exit(0);
-}
-
 bool sim_t::mmio_load(reg_t paddr, size_t len, uint8_t* bytes)
 {
   if (paddr + len < paddr)
@@ -416,6 +407,52 @@ bool sim_t::host_disabled() const
     }
   }
   return false;
+}
+
+extern "C" void spike_checkpoint_install_rom(
+    sim_t* sim, reg_t base, const char* bytes, size_t size)
+{
+  if (!sim || !bytes || size == 0) {
+    return;
+  }
+
+  std::vector<char> rom(bytes, bytes + size);
+  sim->add_device(base, std::make_shared<rom_device_t>(std::move(rom)));
+}
+
+extern "C" int spike_checkpoint_save_mainram(
+    sim_t* sim, reg_t mainram_base, const char* output_path)
+{
+  if (!sim || !output_path) {
+    return -1;
+  }
+
+  auto mainram_pair = sim->get_bus_rw().find_device(mainram_base, 1);
+  auto* mainram = dynamic_cast<mem_t*>(mainram_pair.second);
+  if (!mainram) {
+    return -1;
+  }
+
+  std::ofstream out(output_path, std::ios::binary);
+  if (!out.is_open()) {
+    return -1;
+  }
+
+  mainram->dump(out);
+  return out.good() ? 0 : -1;
+}
+
+void sim_t::request_checkpoint_save()
+{
+  checkpoint_save_requested = true;
+  if (auto* runtime = runtime_context()) {
+    if (auto* controller = runtime->checkpoint_controller()) {
+      controller->request_save();
+      if (controller->save_requested()) {
+        htif_exit(0);
+      }
+    }
+  }
 }
 
 void sim_t::set_rom()
@@ -491,8 +528,12 @@ void sim_t::reset()
 {
   if (dtb_enabled)
     set_rom();
-  if (post_reset_cb)
-    post_reset_cb();
+
+  if (auto* runtime = runtime_context()) {
+    if (auto* controller = runtime->checkpoint_controller()) {
+      controller->on_post_reset(*this);
+    }
+  }
 }
 
 void sim_t::idle()

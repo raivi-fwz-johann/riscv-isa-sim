@@ -33,7 +33,6 @@
 #undef STATE
 #define STATE state
 
-static constexpr reg_t CHECKPOINT_TRIGGER_CSR = 0x800;
 static inline spike_hook_dispatcher_t* get_hook_dispatcher(processor_t* p)
 {
   if (!p) {
@@ -75,6 +74,8 @@ static inline bool commits_log_active(processor_t* p)
   auto* log_manager = get_log_manager(p);
   return p->get_log_commits_enabled() || (log_manager && log_manager->enable_commit_log_stant());
 }
+
+static constexpr reg_t kCheckpointTriggerCsr = 0x800;
 
 processor_t::processor_t(const char* isa_str, const char* priv_str,
                          const cfg_t *cfg,
@@ -678,9 +679,10 @@ void processor_t::disasm(insn_t insn)
 void processor_t::put_csr(int which, reg_t val)
 {
   val = zext_xlen(val);
-  if (which == CHECKPOINT_TRIGGER_CSR) {
-    if (sim)
-      sim->request_checkpoint_save();
+  if (which == kCheckpointTriggerCsr) {
+    if (sim) {
+      static_cast<sim_t*>(sim)->request_checkpoint_save();
+    }
     return;
   }
   auto search = state.csrmap.find(which);
@@ -695,7 +697,7 @@ void processor_t::put_csr(int which, reg_t val)
 // side effects on reads.
 reg_t processor_t::get_csr(int which, insn_t insn, bool write, bool peek)
 {
-  if (which == CHECKPOINT_TRIGGER_CSR)
+  if (which == kCheckpointTriggerCsr)
     return 0;
 
   auto search = state.csrmap.find(which);
