@@ -69,10 +69,14 @@ public:
 
   virtual const std::map<size_t, processor_t*>& get_harts() const override { return harts; }
   const bus_t& get_bus() const {  return bus;}
+  bus_t& get_bus_rw() { return bus; }
+  clint_t* get_clint() const { return clint.get(); }
+  const std::string& get_dtb() const { return dtb; }
+  const std::vector<std::pair<reg_t, abstract_mem_t*>>& get_mems() const { return mems; }
+  void request_checkpoint_save();
 
   // Callback for processors to let the simulation know they were reset.
   virtual void proc_reset(unsigned id) override;
-
   size_t INTERLEAVE;
   static const size_t INSNS_PER_RTC_TICK = 100; // 10 MHz clock for 1 BIPS core
   static const size_t CPU_HZ = 1000000000; // 1GHz CPU
@@ -101,6 +105,7 @@ private:
 
   socketif_t *socketif;
   std::ostream sout_; // used for socket and terminal interface
+  bool checkpoint_save_requested = false;
 
   processor_t* get_core(const std::string& i);
   void step(size_t n); // step through simulation

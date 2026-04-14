@@ -17,6 +17,7 @@ extensions_srcs = \
 	runtime/spike_host_policy.cc \
 	runtime/spike_log_manager.cc \
 	integration/spike_bootstrap.cc \
+	checkpoint/checkpoint_controller.cc \
 	checkpoint/checkpoint_files.cc \
 	checkpoint/checkpoint_restore_rom.cc \
 

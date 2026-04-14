@@ -3,6 +3,7 @@
 #include "integration/spike_bootstrap.h"
 
 #include "arith.h"
+#include "checkpoint/checkpoint_restore_rom.h"
 #include "config.h"
 #include "mmu.h"
 #include "platform.h"
@@ -415,12 +416,23 @@ spike_boot_options_t spike_parse_argv_options(int argc, char** argv)
   parser.option(0, "instructions", 1, [&](const char* s){
     options.instructions = strtoull(s, 0, 0);
   });
+  parser.option(0, "save", 1, [&](const char* s){ options.checkpoint.snapshot_save_name = s; });
+  parser.option(0, "load", 1, [&](const char* s){
+    options.checkpoint.snapshot_load_name = s;
+    options.cfg.start_pc = kCheckpointBootromBase;
+  });
+  parser.option(0, "compress", 0, [&](const char UNUSED *s){ options.checkpoint.snapshot_compress = true; });
+  parser.option(0, "compress-zstd", 0, [&](const char UNUSED *s){ options.checkpoint.snapshot_compress_zstd = true; });
 
   auto argv1 = parser.parse(argv);
   options.htif_args = std::vector<std::string>(argv1, (const char*const*)argv + argc);
 
-  if (!*argv1)
+  if (options.checkpoint.snapshot_load_name) {
+    if (!*argv1)
+      options.htif_args.insert(options.htif_args.begin(), "none");
+  } else if (!*argv1) {
     help();
+  }
 
   return options;
 }
@@ -515,6 +527,17 @@ spike_boot_result_t spike_bootstrap(
       options.socket_enabled,
       options.cmd_file,
       options.instructions);
+
+  if (auto* runtime = result.sim->runtime_context()) {
+    runtime->set_checkpoint_controller(make_checkpoint_controller(options.checkpoint));
+  }
+
+  const bool has_elf = !options.htif_args.empty() && options.htif_args.front() != "none";
+  if (auto* runtime = result.sim->runtime_context()) {
+    if (auto* controller = runtime->checkpoint_controller()) {
+      controller->prepare_restore(*result.sim, has_elf);
+    }
+  }
 
   result.jtag_dtm = std::make_unique<jtag_dtm_t>(&result.sim->debug_module, options.dmi_rti);
   if (options.use_rbb) {

@@ -31,9 +31,5 @@ public:
   virtual void save(sim_t& sim) = 0;
 };
 
-inline std::unique_ptr<checkpoint_controller_t> make_checkpoint_controller(
-    checkpoint_legacy_config_t config)
-{
-  (void)config;
-  return {};
-}
+std::unique_ptr<checkpoint_controller_t> make_checkpoint_controller(
+    checkpoint_legacy_config_t config);
