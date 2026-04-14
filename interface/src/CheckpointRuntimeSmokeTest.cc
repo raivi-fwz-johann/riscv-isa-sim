@@ -311,11 +311,33 @@ bool artifact_set_exists(const fs::path& prefix)
   return fs::exists(bootram) && mainram_count == 1 && fs::exists(htif) && fs::exists(regs);
 }
 
-bool artifact_set_absent(const fs::path& prefix)
+std::optional<std::string> read_saved_pc(const fs::path& prefix)
 {
-  return !fs::exists(prefix.string() + ".bootram") && !fs::exists(prefix.string() + ".mainram") &&
-         !fs::exists(prefix.string() + ".mainram.zip") && !fs::exists(prefix.string() + ".mainram.zst") &&
-         !fs::exists(prefix.string() + ".htif") && !fs::exists(prefix.string() + ".re_regs");
+  std::ifstream in(prefix.string() + ".re_regs");
+  if (!in.is_open()) {
+    return std::nullopt;
+  }
+
+  std::string line;
+  while (std::getline(in, line)) {
+    if (line.rfind("pc:", 0) == 0) {
+      return line.substr(3);
+    }
+  }
+  return std::nullopt;
+}
+
+int ensure_pc_progressed(const fs::path& from_prefix, const fs::path& to_prefix, int fail_rc)
+{
+  const auto from_pc = read_saved_pc(from_prefix);
+  const auto to_pc = read_saved_pc(to_prefix);
+  if (!from_pc || !to_pc) {
+    return fail_rc;
+  }
+  if (*from_pc == *to_pc) {
+    return fail_rc;
+  }
+  return 0;
 }
 
 int test_bare_none_restore(const fs::path& dir)
@@ -341,8 +363,11 @@ int test_bare_none_restore(const fs::path& dir)
   if (const int rc = run_checked(run_load, 12, 17)) {
     return rc;
   }
-  if (!artifact_set_absent(other_prefix)) {
+  if (!artifact_set_exists(other_prefix)) {
     return 13;
+  }
+  if (const int rc = ensure_pc_progressed(prefix, other_prefix, 18)) {
+    return rc;
   }
   return 0;
 }
@@ -370,8 +395,11 @@ int test_bare_overlay_restore(const fs::path& dir)
   if (const int rc = run_checked(run_load_overlay, 22, 27)) {
     return rc;
   }
-  if (!artifact_set_absent(other_prefix)) {
+  if (!artifact_set_exists(other_prefix)) {
     return 23;
+  }
+  if (const int rc = ensure_pc_progressed(prefix, other_prefix, 28)) {
+    return rc;
   }
   return 0;
 }
@@ -409,8 +437,11 @@ int test_bare_zstd_restore(const fs::path& dir)
   if (const int rc = run_checked(run_load_none, 43, 48)) {
     return rc;
   }
-  if (!artifact_set_absent(other_prefix)) {
+  if (!artifact_set_exists(other_prefix)) {
     return 44;
+  }
+  if (const int rc = ensure_pc_progressed(prefix, other_prefix, 49)) {
+    return rc;
   }
   return 0;
 }
@@ -438,8 +469,11 @@ int test_bare_multihart_restore(const fs::path& dir)
   if (const int rc = run_checked(run_load, 32, 37)) {
     return rc;
   }
-  if (!artifact_set_absent(other_prefix)) {
+  if (!artifact_set_exists(other_prefix)) {
     return 33;
+  }
+  if (const int rc = ensure_pc_progressed(prefix, other_prefix, 38)) {
+    return rc;
   }
   return 0;
 }
