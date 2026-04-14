@@ -6,31 +6,10 @@
 #include "platform.h"
 #include "simif.h"
 
-#include <cstring>
-#include <fstream>
 #include <iostream>
-#include <sstream>
 
 #define VSEW8 (0x0)
 #define VLMUL8 (0x3)
-
-__attribute__((weak)) rom_device_t::rom_device_t(std::vector<char> data)
-  : data(data)
-{
-}
-
-__attribute__((weak)) bool rom_device_t::load(reg_t addr, size_t len, uint8_t* bytes)
-{
-  if (addr + len > data.size())
-    return false;
-  std::memcpy(bytes, &data[addr], len);
-  return true;
-}
-
-__attribute__((weak)) bool rom_device_t::store(reg_t, size_t, const uint8_t*)
-{
-  return false;
-}
 
 int fdt_parse_clint(const void* fdt, reg_t* clint_addr, const char* compatible)
     __attribute__((weak));
@@ -383,21 +362,4 @@ std::vector<char> build_checkpoint_restore_rom(
   std::vector<char> bytes(reinterpret_cast<char*>(rom),
                           reinterpret_cast<char*>(rom) + sizeof(rom));
   return bytes;
-}
-
-std::unique_ptr<rom_device_t> load_checkpoint_bootrom_file(const std::string& path)
-{
-  std::ifstream boot_fin(path, std::ios::binary);
-  if (!boot_fin.good()) {
-    std::cerr << "can't find bootram: " << path << std::endl;
-    std::exit(-1);
-  }
-
-  std::stringstream boot_stream;
-  boot_stream << boot_fin.rdbuf();
-  std::string boot_image = boot_stream.str();
-  std::vector<char> rom;
-  rom.insert(rom.begin(), boot_image.begin(), boot_image.end());
-
-  return std::make_unique<rom_device_t>(rom);
 }
