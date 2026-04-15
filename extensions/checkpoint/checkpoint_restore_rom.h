@@ -10,12 +10,14 @@
 #include <string>
 #include <vector>
 
+class sim_t;
+
 constexpr reg_t kCheckpointBootromBase = 0x10000;
 constexpr reg_t kCheckpointBootromSize = 0x10000;
 
 std::vector<char> build_checkpoint_trampoline_rom(unsigned xlen, reg_t target_pc);
 std::vector<char> build_checkpoint_restore_rom(
-    processor_t& proc,
+    sim_t& sim,
     clint_t& clint,
     const std::string& dtb);
 

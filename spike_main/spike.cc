@@ -14,15 +14,5 @@ int main(int argc, char** argv)
     return 0;
   }
 
-  const int return_code = boot.sim->run();
-
-  if (auto* runtime = boot.sim->runtime_context()) {
-    if (auto* controller = runtime->checkpoint_controller()) {
-      if (controller->has_save_target() && controller->save_requested()) {
-        controller->save(*boot.sim);
-      }
-    }
-  }
-
-  return return_code;
+  return boot.sim->run();
 }
