@@ -152,15 +152,14 @@ void save_regs(sim_t& sim, const checkpoint_paths_t& paths)
 
 void save_bootram(sim_t& sim, const checkpoint_paths_t& paths)
 {
-  auto* proc = sim.get_core(0);
   auto* clint = sim.get_clint();
-  if (!proc || !clint) {
-    std::cerr << "error: missing core0 or clint while saving checkpoint bootram"
+  if (!clint) {
+    std::cerr << "error: missing clint while saving checkpoint bootram"
               << std::endl;
     std::exit(-1);
   }
 
-  auto bytes = build_checkpoint_restore_rom(*proc, *clint, sim.get_dtb());
+  auto bytes = build_checkpoint_restore_rom(sim, *clint, sim.get_dtb());
   std::ofstream out(paths.bootram, std::ios::binary);
   if (!out.is_open()) {
     std::cerr << "error: cannot create " << paths.bootram << std::endl;
@@ -233,6 +232,24 @@ void install_trampoline(sim_t& sim)
   spike_checkpoint_install_rom(&sim, DEFAULT_RSTVEC, bytes.data(), bytes.size());
 }
 
+void prepare_restore_harts(sim_t& sim)
+{
+  for (const auto& [hartid, proc] : sim.get_harts()) {
+    (void)hartid;
+    if (!proc) {
+      std::cerr << "error: null hart during checkpoint restore prepare"
+                << std::endl;
+      std::exit(-1);
+    }
+    state_t* state = proc->get_state();
+    state->debug_mode = true;
+    state->prv = PRV_M;
+    state->prev_prv = PRV_M;
+    state->v = false;
+    state->prev_v = false;
+  }
+}
+
 }  // namespace
 
 class legacy_checkpoint_controller_t final : public checkpoint_controller_t {
@@ -251,6 +268,8 @@ public:
   {
     save_requested_ = has_save_target();
     pending_ram_overlay_ = false;
+    pending_htif_restore_ = false;
+    pending_post_reset_restore_ = false;
     restore_mode_ = checkpoint_restore_mode_t::disabled;
 
     if (!has_load_target()) {
@@ -258,23 +277,20 @@ public:
     }
 
     require_core0(sim, "load");
-    auto* proc = sim.get_core(0);
-    proc->get_state()->debug_mode = true;
-    proc->get_state()->prv = PRV_M;
-    proc->get_state()->prev_prv = PRV_M;
-    proc->get_state()->v = false;
-    proc->get_state()->prev_v = false;
+    prepare_restore_harts(sim);
 
     const auto paths = checkpoint_paths_t::from_prefix(config_.snapshot_load_name);
     install_checkpoint_bootrom(sim, paths);
-    restore_htif(sim, paths);
+    pending_post_reset_restore_ = true;
 
     if (has_elf) {
       restore_mode_ = checkpoint_restore_mode_t::elf_bootstrap_then_ram_overlay;
       pending_ram_overlay_ = true;
+      pending_htif_restore_ = true;
       return;
     }
 
+    restore_htif(sim, paths);
     restore_mode_ = checkpoint_restore_mode_t::self_contained_none;
     install_trampoline(sim);
     restore_mainram(sim, paths, config_);
@@ -282,15 +298,36 @@ public:
 
   void on_post_reset(sim_t& sim) override
   {
-    if (!pending_ram_overlay_ ||
-        restore_mode_ != checkpoint_restore_mode_t::elf_bootstrap_then_ram_overlay ||
-        !has_load_target()) {
+    if (!has_load_target() || !pending_post_reset_restore_ ||
+        restore_mode_ == checkpoint_restore_mode_t::disabled) {
+      return;
+    }
+
+    prepare_restore_harts(sim);
+
+    if (!pending_ram_overlay_ &&
+        !pending_htif_restore_ &&
+        restore_mode_ != checkpoint_restore_mode_t::elf_bootstrap_then_ram_overlay) {
+      pending_post_reset_restore_ = false;
+      return;
+    }
+
+    if (restore_mode_ != checkpoint_restore_mode_t::elf_bootstrap_then_ram_overlay) {
+      pending_post_reset_restore_ = false;
       return;
     }
 
     const auto paths = checkpoint_paths_t::from_prefix(config_.snapshot_load_name);
-    restore_mainram(sim, paths, config_);
-    pending_ram_overlay_ = false;
+    if (pending_ram_overlay_) {
+      restore_mainram(sim, paths, config_);
+      pending_ram_overlay_ = false;
+    }
+    if (pending_htif_restore_) {
+      restore_htif(sim, paths);
+      pending_htif_restore_ = false;
+    }
+
+    pending_post_reset_restore_ = false;
   }
 
   void request_save() override { save_requested_ = has_save_target(); }
@@ -320,6 +357,8 @@ private:
   checkpoint_restore_mode_t restore_mode_ = checkpoint_restore_mode_t::disabled;
   bool save_requested_ = false;
   bool pending_ram_overlay_ = false;
+  bool pending_htif_restore_ = false;
+  bool pending_post_reset_restore_ = false;
 };
 
 std::unique_ptr<checkpoint_controller_t> make_checkpoint_controller(

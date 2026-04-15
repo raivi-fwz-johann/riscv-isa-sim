@@ -443,6 +443,13 @@ spike_boot_options_t spike_parse_argv_options(int argc, char** argv)
 
 void spike_prepare_boot_options(spike_boot_options_t& options)
 {
+  if (options.checkpoint.snapshot_compress &&
+      options.checkpoint.snapshot_compress_zstd) {
+    std::cerr << "--compress and --compress-zstd are mutually exclusive."
+              << std::endl;
+    exit(1);
+  }
+
   if (options.cfg.explicit_hartids) {
     if (options.nprocs.overridden() && (options.nprocs() != options.cfg.nprocs())) {
       std::cerr << "Number of specified hartids ("

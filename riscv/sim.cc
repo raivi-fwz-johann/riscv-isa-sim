@@ -304,7 +304,17 @@ int sim_t::run()
 
   // htif_t::run() will repeatedly call back into sim_t::idle(), each
   // invocation of which will advance target time
-  return htif_t::run();
+  const int rc = htif_t::run();
+
+  if (auto* runtime = runtime_context()) {
+    if (auto* controller = runtime->checkpoint_controller()) {
+      if (controller->has_save_target() && controller->save_requested()) {
+        controller->save(*this);
+      }
+    }
+  }
+
+  return rc;
 }
 
 void sim_t::step(size_t n)

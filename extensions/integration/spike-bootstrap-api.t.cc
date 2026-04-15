@@ -1,6 +1,8 @@
 #include "integration/spike_bootstrap.h"
 #include "checkpoint/checkpoint_restore_rom.h"
 #include "sim.h"
+#include <sys/wait.h>
+#include <unistd.h>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -56,6 +58,23 @@ int main()
     if (options.htif_args.front() != "none") return 23;
     if (!options.cfg.start_pc.has_value()) return 24;
     if (*options.cfg.start_pc != kCheckpointBootromBase) return 25;
+  }
+
+  {
+    pid_t pid = fork();
+    if (pid < 0) return 30;
+    if (pid == 0) {
+      spike_boot_options_t options;
+      options.checkpoint.snapshot_compress = true;
+      options.checkpoint.snapshot_compress_zstd = true;
+      spike_prepare_boot_options(options);
+      _exit(0);
+    }
+
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) return 31;
+    if (!WIFEXITED(status)) return 32;
+    if (WEXITSTATUS(status) == 0) return 33;
   }
 
   return 0;
