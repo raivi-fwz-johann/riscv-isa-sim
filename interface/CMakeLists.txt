@@ -3,7 +3,7 @@ project(spikeInterface_V2)
 include(GNUInstallDirs)
 
 add_subdirectory(utility)
-add_subdirectory(utilityLibs)
+
 option(SPIKE_STATIC_ENV_LIB "Whether to link static libstdc++" OFF)
 if(SPIKE_STATIC_ENV_LIB)
   message("-- spike interface link static libstdc++")

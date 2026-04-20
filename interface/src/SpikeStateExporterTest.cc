@@ -1,5 +1,6 @@
 #include "SpikeStateExporter.hpp"
 
+#include "decode_macros.h"
 #include "mmu.h"
 #include "trap.h"
 
@@ -26,6 +27,24 @@ int main()
     return 5;
   if (exec_snapshot->mmu_trace.paddr != 0x2000)
     return 6;
+
+  exporter.observe_exec(1, &fetch, 0x1004, PC_SERIALIZE_AFTER);
+  exec_snapshot = exporter.snapshot(1);
+  if (!exec_snapshot)
+    return 24;
+  if (exec_snapshot->observed.pc != 0x1004)
+    return 25;
+  if (exec_snapshot->observed.npc != ERROR_PC_ADDR)
+    return 26;
+
+  exporter.observe_exec(1, &fetch, 0x1008, PC_SERIALIZE_BEFORE);
+  exec_snapshot = exporter.snapshot(1);
+  if (!exec_snapshot)
+    return 27;
+  if (exec_snapshot->observed.pc != 0x1008)
+    return 28;
+  if (exec_snapshot->observed.npc != ERROR_PC_ADDR)
+    return 29;
 
   spike_mmu_walk_observe_t pending_walk{};
   pending_walk.hart_id = 0;

@@ -48,7 +48,7 @@ struct PTWStep {
   uint64_t pte = 0;
 };
 
-struct MemOp {
+struct TraceMemOp {
   uint64_t vaddr = 0;
   uint64_t paddr = 0;
   uint8_t size_bytes = 0;
@@ -203,7 +203,7 @@ public:
   uint64_t getVl() const { return m_Vl; }
   uint64_t getVStart() const { return m_VStart; }
   uint64_t getActiveMask() const { return m_ActiveMask; }
-  const std::vector<MemOp>& getMemOps() const { return m_MemOps; }
+  const std::vector<TraceMemOp>& getMemOps() const { return m_MemOps; }
   bool isBranchTaken() const { return m_BranchTaken; }
   uint32_t getException() const { return m_Exception; }
   bool inTrap() const;
@@ -278,7 +278,7 @@ public:
   uint64_t m_Vl = 0;
   uint64_t m_VStart = 0;
   uint64_t m_ActiveMask = 0;
-  std::vector<MemOp> m_MemOps;
+  std::vector<TraceMemOp> m_MemOps;
   bool m_BranchTaken = false;
   uint32_t m_Exception = 0;
 
