@@ -478,5 +478,14 @@ void RawSpike::setLogMem(bool val) {
 }
 
 void RawSpike::setCycle(uint64_t Value, uint32_t cid) {
-  m_Simulator->get_core(cid)->get_state()->mcycle->write(Value);
+  auto* state = m_Simulator->get_core(cid)->get_state();
+  auto& mcycle = state->mcycle;
+
+  // setCycle is an external synchronization hook, not an architectural CSR
+  // write. Clear any previous explicit-write bookkeeping before overriding
+  // the counter value again in the same host-side control flow.
+  mcycle->bump(0);
+  if (mcycle->read() != Value) {
+    mcycle->write(Value);
+  }
 }

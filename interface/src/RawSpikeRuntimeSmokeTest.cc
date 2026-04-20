@@ -237,6 +237,32 @@ int test_disable_host_smoke(const fs::path& dir)
   return 0;
 }
 
+int test_set_cycle_rewrite(const fs::path& dir)
+{
+  const auto elf = build_elf(
+      dir,
+      "set_cycle",
+      ".option norvc\n"
+      ".section .text\n"
+      ".globl _start\n"
+      "_start:\n"
+      "1:\n"
+      "  addi t0, t0, 1\n"
+      "  j 1b\n");
+
+  RawSpike sim;
+  sim.init(make_cmd(elf));
+  sim.start();
+
+  sim.setCycle(10, 0);
+  sim.setCycle(20, 0);
+
+  const auto cycle = sim.getSpikeSimulator()->get_core(0)->get_state()->mcycle->read();
+  sim.stop();
+
+  return cycle == 20 ? 0 : 71;
+}
+
 }  // namespace
 
 int main()
@@ -251,6 +277,9 @@ int main()
     return rc;
   }
   if (const int rc = test_disable_host_smoke(dir)) {
+    return rc;
+  }
+  if (const int rc = test_set_cycle_rewrite(dir)) {
     return rc;
   }
   return 0;
