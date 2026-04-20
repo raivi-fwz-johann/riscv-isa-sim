@@ -3,8 +3,7 @@
 #include <unordered_map>
 #include <chrono>
 
-#include "RawSpike.hpp"
-#include "FuncSimAdapter.hpp"
+#include "SpikeSimObjSync.hpp"
 #include "Disassembler.hpp"
 
 // #include "SpikeUtils.hpp"
@@ -13,8 +12,7 @@ void testReplay(const std::string &cmd, const std::string &isa) {
   std::list<InstUserPtr> InstVec;
   std::unordered_map<uint64_t, InstUserPtr> InstSet;
   Disassembler disasm(isa, "msu");
-  FuncSimAdapter SimObj;
-  SimObj.setFuncSim(new RawSpike());
+  SpikeSimObjSync SimObj;
   SimObj.init(cmd);
   SimObj.start();
   // SimObj.setLogCommits(true, true);
@@ -77,8 +75,7 @@ void testReplayWithMiss(const std::string &cmd, const std::string &isa) {
   std::list<InstUserPtr> InstVec;
   std::unordered_map<uint64_t, InstUserPtr> InstSet;
   Disassembler disasm(isa, "msu");
-  FuncSimAdapter SimObj;
-  SimObj.setFuncSim(new RawSpike());
+  SpikeSimObjSync SimObj;
 
   SimObj.init(cmd);
   SimObj.start();
@@ -150,8 +147,7 @@ void testReplayWithMiss2(const std::string &cmd, const std::string &isa) {
   std::list<InstUserPtr> InstVec;
   std::unordered_map<uint64_t, InstUserPtr> InstSet;
   Disassembler disasm(isa, "msu");
-  FuncSimAdapter SimObj;
-  SimObj.setFuncSim(new RawSpike());
+  SpikeSimObjSync SimObj;
 
   SimObj.init(cmd);
   SimObj.start();
@@ -214,8 +210,7 @@ void testReplayWithMiss2(const std::string &cmd, const std::string &isa) {
 
 void testSpikeSpeed(const std::string &cmd, const std::string &isa) {
   // auto start0 = std::chrono::high_resolution_clock::now();
-  FuncSimAdapter SimObj;
-  SimObj.setFuncSim(new RawSpike());
+  SpikeSimObjSync SimObj;
   SimObj.init(cmd);
   SimObj.start();
   // SimObj.setLogCommits(true, false);

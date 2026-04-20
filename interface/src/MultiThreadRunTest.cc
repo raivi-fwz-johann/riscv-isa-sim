@@ -2,8 +2,7 @@
 
 #include "Thread.hpp"
 
-#include "RawSpike.hpp"
-#include "FuncSimAdapter.hpp"
+#include "SpikeSimObjSync.hpp"
 #include "utility/DTCTools.hpp"
 #include "Disassembler.hpp"
 
@@ -12,8 +11,7 @@ public:
   void normalTest() {
     tools::fileDts2Dtb("/work/home/blqiu/spike/rv64_2cores.dts",
                        "./rv64_2cores.dtb");
-    FuncSimAdapter SimObj;
-    SimObj.setFuncSim(new RawSpike());
+    SpikeSimObjSync SimObj;
     SimObj.init("spike --log-commits --dtb=./rv64_2cores.dtb "
                 "--priv=msu "
                 "/work/home/blqiu/riscv-tests/build/benchmarks/vvadd.riscv");

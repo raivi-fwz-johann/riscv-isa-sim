@@ -13,7 +13,6 @@
 #include <iostream>
 
 #include "FuncSimAdapter.hpp"
-#include "SimObjMacros.hpp"
 
 void PathHandler::init(FuncSimAdapter *SimObj, uint32_t CId) {
   m_SimObj = SimObj;
@@ -24,21 +23,21 @@ void PathHandler::recover(uint64_t IId) {
   if (InstTrace::isCorrectID(IId)) {
     clearMissQueue();
   } else {
-    GET_CORE_INFO(m_MissIHolder).popUntil(IId);
-    GET_CORE_INFO(m_MissIdToAlloc) = IId + 1;
+    m_SimObj->missHolder(m_CId).popUntil(IId);
+    m_SimObj->missIdCursor(m_CId) = IId + 1;
   }
 }
 
 void PathHandler::configurePath(uint64_t NPc) {
   // std::cout << "path curr id: " << ConvertId(m_CurrId) << " " << inCorrectId() << std::endl;
-  auto &holder = inCorrectId() ? GET_CORE_INFO(m_IHolder) : GET_CORE_INFO(m_MissIHolder);
+  auto &holder = inCorrectId() ? m_SimObj->correctHolder(m_CId) : m_SimObj->missHolder(m_CId);
 
   InstUserPtr CurrInst = holder.getCurrInst();
   InstUserPtr NextSavedInst = holder.getNextInst();
 
   if (not holder.size()) {
     /* Only correct id enter here */
-    m_MissPredict = NPc != m_SimObj->m_SimImpl->getCurrPc(m_CId);
+    m_MissPredict = NPc != m_SimObj->backendCurrPc(m_CId);
     clearMissQueue();
   } else if (holder.inDummyHead()) {
     /* Only correct id enter here */
@@ -57,7 +56,7 @@ void PathHandler::configurePath(uint64_t NPc) {
 }
 
 bool PathHandler::isNewStep() const {
-  auto &holder = inCorrectId() ? GET_CORE_INFO(m_IHolder) : GET_CORE_INFO(m_MissIHolder);
+  auto &holder = inCorrectId() ? m_SimObj->correctHolder(m_CId) : m_SimObj->missHolder(m_CId);
   InstUserPtr NextSavedInst = holder.getNextInst();
 
   if (inCorrectId()) {
@@ -80,7 +79,7 @@ void PathHandler::checkPath(InstUserPtr CurrInst, uint64_t NPc) {
 }
 
 bool PathHandler::inCorrectId() const {
-  if (GET_CORE_INFO(m_IHolder).size() == 0 and GET_CORE_INFO(m_MissIHolder).size() == 0) {
+  if (m_SimObj->correctHolder(m_CId).size() == 0 and m_SimObj->missHolder(m_CId).size() == 0) {
     return true;
   }
   return InstTrace::isCorrectID(m_CurrId);
@@ -93,7 +92,7 @@ void PathHandler::setCurrId(uint64_t id) {
 }
 
 void PathHandler::clearMissQueue() {
-  GET_CORE_INFO(m_MissIHolder).clear();
-  GET_CORE_INFO(m_MissIdToAlloc) = MISS_ID_FLAG;
+  m_SimObj->missHolder(m_CId).clear();
+  m_SimObj->missIdCursor(m_CId) = MISS_ID_FLAG;
   m_MissPredict = false;
 }
