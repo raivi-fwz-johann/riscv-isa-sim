@@ -134,6 +134,11 @@ add_executable(RawSpikeRuntimeSmokeTest
 )
 target_link_libraries(RawSpikeRuntimeSmokeTest spikeInterface_V2 ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
 
+add_executable(SpikeSimAdapterRuntimeSmokeTest
+  src/SpikeSimAdapterRuntimeSmokeTest.cc
+)
+target_link_libraries(SpikeSimAdapterRuntimeSmokeTest spikeInterface_V2 ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+
 add_executable(CheckpointRuntimeSmokeTest
   src/CheckpointRuntimeSmokeTest.cc
 )

@@ -309,6 +309,8 @@ public:
 
   friend class InstTraceModifier;
   friend class FuncSimAdapter;
+  friend class SpikeSimObjSync;
+  friend class SpikeSimObjAsync;
   friend class SpikeSimObjHooker;
   friend class InstInfoHolder;
   friend class InstDebugger;

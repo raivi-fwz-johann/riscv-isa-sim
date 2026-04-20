@@ -1,15 +1,13 @@
-#include "FuncSimAdapter.hpp"
+#include "SpikeSimObjSync.hpp"
 #include <iostream>
 
-#include "RawSpike.hpp"
 #include "Disassembler.hpp"
 
 class SimObjTest {
 public:
   static void testInRange(const std::string &cmd, const std::string &isa, size_t beg,
                    size_t end) {
-    FuncSimAdapter SimObj;
-    SimObj.setFuncSim(new RawSpike());
+    SpikeSimObjSync SimObj;
     SimObj.init(cmd);
     SimObj.start();
 

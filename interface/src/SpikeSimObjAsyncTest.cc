@@ -1,14 +1,18 @@
 #include "SpikeSimObjAsync.hpp"
 
-#include "RawSpike.hpp"
 #include <iostream>
+#include <type_traits>
 #include "utility/PerfTimer.hpp"
+
+static_assert(std::is_abstract_v<FuncSimAdapter>,
+              "FuncSimAdapter must remain an abstract interface");
+static_assert(std::is_base_of_v<FuncSimAdapter, SpikeSimObjAsync>,
+              "SpikeSimObjAsync must derive from FuncSimAdapter");
 
 class SpikeSimObjAsyncTest {
 public:
   void test(const std::string &cmd, const std::string &isa) {
     SpikeSimObjAsync SimObj;
-    SimObj.setFuncSim(new RawSpike());
     SimObj.init(cmd);
     (void)isa;
     SimObj.start();

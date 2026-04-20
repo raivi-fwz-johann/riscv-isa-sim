@@ -1,6 +1,9 @@
 #include "SpikeSimObjAsync.hpp"
 
 #include <iostream>
+#include <utility>
+
+#include "RawSpike.hpp"
 
 SpikeSimObjAsync::SpikeSimObjAsync() {
   m_InstBuf.reserve(INST_BUF_SIZE);
@@ -11,63 +14,45 @@ SpikeSimObjAsync::SpikeSimObjAsync() {
 }
 
 SpikeSimObjAsync::~SpikeSimObjAsync() {
-  FuncSimAdapter::stop();
+  stop();
+  waitStop();
 }
 
-void SpikeSimObjAsync::initROICount(int num) { m_ROICount = num; }
+void SpikeSimObjAsync::initROICount(int num) {
+  m_ROICount = num;
+  SpikeSimObjSync::initROICount(num);
+}
 
 void SpikeSimObjAsync::start() {
-  FuncSimAdapter::start();
-  // run
+  SpikeSimObjSync::start();
   m_Running = true;
-  m_Th = std::make_unique<std::thread>([&] {
+  m_Th = std::make_unique<std::thread>([this] {
     int PassedROI = 0;
-    // std::chrono::high_resolution_clock::time_point BegTime;
-    size_t ICount = 0;
-    while(not FuncSimAdapter::done() and m_Running) {
+    while (not m_SimImpl->done() and m_Running) {
       if (m_ROICount and PassedROI == m_ROICount) {
         break;
       }
-      if (not m_ROICount or FuncSimAdapter::inROI()) {
+      if (not m_ROICount or m_SimImpl->inROI(0)) {
         if (not m_HasEnterROI) {
           m_HasEnterROI = true;
-          // FuncSimAdapter::setLogCommits(true, true);
           std::cout << "enter ROI" << std::endl;
         }
         if (full()) {
           continue;
         }
-        FuncSimAdapter::step(1);
-        auto Inst = FuncSimAdapter::takeInst();
-        if (Inst and Inst->perfect()) {
-          // if (not m_InstBuf[m_PosAdd]) {
-          //   m_InstBuf[m_PosAdd] = std::make_shared<InstTrace>(0);
-          // }
-          m_InstBuf[m_PosAdd] = std::move(*Inst);
+        stepSync(1, 0);
+        auto inst = takeProducedInst(0);
+        if (inst and inst->perfect()) {
+          m_InstBuf[m_PosAdd] = std::move(*inst);
           nextAddPos();
-
-          // if (ICount == 0) {
-          //   BegTime = std::chrono::high_resolution_clock::now();
-          // } else if (ICount % INST_COUNT_TO_LOG == 0) {
-          //   auto EndTime = std::chrono::high_resolution_clock::now();
-          //   auto Dura = EndTime - BegTime;
-          //   std::cout << "Complete Insns: " << INST_COUNT_TO_LOG << ", passed time: "
-          //             << std::chrono::duration_cast<std::chrono::milliseconds>(Dura).count() << "ms" << std::endl;
-          //   BegTime = EndTime;
-          // }
-          ++ICount;
-          // if (ICount == 100000000) {
-          //   FuncSimAdapter::stop();
-          // }
         }
       } else {
         if (m_HasEnterROI) {
           m_HasEnterROI = false;
           ++PassedROI;
-          // FuncSimAdapter::setLogCommits(false, false);
           std::cout << "leave ROI" << std::endl;
         }
-        FuncSimAdapter::step(1);
+        stepSync(1, 0);
       }
     }
     m_Running = false;
@@ -76,24 +61,25 @@ void SpikeSimObjAsync::start() {
 
 void SpikeSimObjAsync::stop() {
   m_Running = false;
+  SpikeSimObjSync::stop();
 }
 
 void SpikeSimObjAsync::waitStop() {
-  if (m_Th) {
+  if (m_Th && m_Th->joinable()) {
     m_Th->join();
   }
 }
 
 bool SpikeSimObjAsync::done() const {
-  return (FuncSimAdapter::done() or not m_Running) and empty();
+  return (m_SimImpl->done() or not m_Running) and empty();
 }
 
-size_t SpikeSimObjAsync::step(size_t n, uint32_t CId) {
-  // do nothing
+size_t SpikeSimObjAsync::step(size_t n, [[maybe_unused]]uint32_t CId) {
+  (void)n;
   return 0;
 }
 
-std::shared_ptr<InstTrace> &SpikeSimObjAsync::takeInst(uint32_t CId) {
+std::shared_ptr<InstTrace> &SpikeSimObjAsync::takeInst([[maybe_unused]]uint32_t CId) {
   if (not empty()) {
     *m_Taking = std::move(m_InstBuf[m_PosFecth]);
     nextFetchPos();
@@ -102,13 +88,15 @@ std::shared_ptr<InstTrace> &SpikeSimObjAsync::takeInst(uint32_t CId) {
   return m_Dummy;
 }
 
-bool SpikeSimObjAsync::inROI(uint32_t cid) const {
+bool SpikeSimObjAsync::inROI([[maybe_unused]]uint32_t cid) const {
   return m_HasEnterROI;
 }
 
 bool SpikeSimObjAsync::empty() const { return m_PosAdd == m_PosFecth; }
 
-bool SpikeSimObjAsync::full() const { return (m_PosAdd + 1) % m_InstBuf.size() == m_PosFecth; }
+bool SpikeSimObjAsync::full() const {
+  return (m_PosAdd + 1) % m_InstBuf.size() == m_PosFecth;
+}
 
 void SpikeSimObjAsync::nextFetchPos() {
   ++m_PosFecth;
