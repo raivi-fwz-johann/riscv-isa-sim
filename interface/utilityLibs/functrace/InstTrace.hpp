@@ -17,8 +17,6 @@
 
 #include "functrace/Memory.hpp"
 
-// #include "../../riscv-isa-sim/riscv/processor.h"
-
 struct XlateFlags {
   bool forced_virt : 1;
   bool hlvx : 1;
