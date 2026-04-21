@@ -33,10 +33,18 @@ public:
   void replay(uint64_t InstUId, uint32_t CId = 0) override;
   InstTrace fetchInstOnly(uint64_t Pc, uint32_t CId = 0,
                           uint64_t IId = INVALID_INST_ID) override;
+  RawSim *getRawSim() override;
   uint64_t vaddr2paddr(uint64_t vaddr, uint32_t CId) const override;
+  void setCycle(uint64_t value, uint32_t CId = 0) override;
   bool inROI(uint32_t cid = 0) const override;
+  bool inWFI(uint32_t cid = 0) const override;
   uint64_t getCurrPc(uint32_t cid = 0) const override;
   uint64_t getConfiguredNPc(uint32_t cid = 0) const override;
+  const PathHandler &getPathHandler(uint32_t CId) const override;
+  uint64_t getCurrInstNPc(uint32_t CId) const override;
+  void setInterleave(size_t val) override;
+  void setLogMem(bool val) override;
+  void setLogCommits(bool log_commits, bool is_fast, uint32_t cid = 0) override;
 
   InstInfoHolder &correctHolder(uint32_t CId) override;
   const InstInfoHolder &correctHolder(uint32_t CId) const override;

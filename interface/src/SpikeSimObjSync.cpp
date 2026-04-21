@@ -224,11 +224,19 @@ InstTrace SpikeSimObjSync::fetchInstOnly(uint64_t Pc, uint32_t CId, uint64_t IId
   return res;
 }
 
+RawSim *SpikeSimObjSync::getRawSim() { return m_SimImpl.get(); }
+
 uint64_t SpikeSimObjSync::vaddr2paddr(uint64_t vaddr, uint32_t CId) const {
   return m_SimImpl->vaddr2paddr(vaddr, CId);
 }
 
+void SpikeSimObjSync::setCycle(uint64_t value, uint32_t CId) {
+  m_SimImpl->setCycle(value, CId);
+}
+
 bool SpikeSimObjSync::inROI(uint32_t cid) const { return m_SimImpl->inROI(cid); }
+
+bool SpikeSimObjSync::inWFI(uint32_t cid) const { return m_SimImpl->inWFI(cid); }
 
 uint64_t SpikeSimObjSync::getConfiguredNPc(uint32_t cid) const {
   return m_CoreInfos[cid].m_PathHandler.getConfiguredNPc();
@@ -246,6 +254,31 @@ uint64_t SpikeSimObjSync::getCurrPc(uint32_t cid) const {
   }
   auto curr_inst = holder.getCurrInst();
   return in_replay ? curr_inst->getPc() : next_inst->getPc();
+}
+
+const PathHandler &SpikeSimObjSync::getPathHandler(uint32_t CId) const {
+  return m_CoreInfos[CId].m_PathHandler;
+}
+
+uint64_t SpikeSimObjSync::getCurrInstNPc(uint32_t CId) const {
+  auto &holder = m_CoreInfos[CId].m_PathHandler.inCorrectId()
+                     ? m_CoreInfos[CId].m_IHolder
+                     : m_CoreInfos[CId].m_MissIHolder;
+  if (auto curr_inst = holder.getCurrInst(); curr_inst != nullptr) {
+    return curr_inst->getNPc();
+  }
+  if (m_CoreInfos[CId].m_NewInst && m_CoreInfos[CId].m_NewInstValid) {
+    return m_CoreInfos[CId].m_NewInst->getNPc();
+  }
+  return ERROR_PC_ADDR;
+}
+
+void SpikeSimObjSync::setInterleave(size_t val) { m_SimImpl->setInterleave(val); }
+
+void SpikeSimObjSync::setLogMem(bool val) { m_SimImpl->setLogMem(val); }
+
+void SpikeSimObjSync::setLogCommits(bool log_commits, bool is_fast, uint32_t cid) {
+  m_SimImpl->setLogCommits(log_commits, is_fast, cid);
 }
 
 void SpikeSimObjSync::rollback(uint64_t InstUId, uint32_t CId) {
