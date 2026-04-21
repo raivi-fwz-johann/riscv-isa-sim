@@ -39,10 +39,11 @@ void spike_state_exporter_t::observe_exec(
   observed.valid = true;
   observed.in_trap = false;
   observed.pc = pc;
+  observed.npc = ERROR_PC_ADDR;
   observed.bits = in ? in->insn.bits() : 0;
   observed.paddr = in ? in->pc_ppn : ERROR_PC_ADDR;
   observed.paddr2 = ERROR_PC_ADDR;
-  if (npc != 0 && npc != PC_SERIALIZE_BEFORE) {
+  if (npc != 0 && !invalid_pc(npc)) {
     observed.npc = npc;
   }
 

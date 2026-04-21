@@ -307,7 +307,7 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
     }
 	    data.m_MemRs.emplace_back(std::get<0>(item), std::get<2>(item), std::get<1>(item), paddr, paddr2);
 	    data.m_mmuTrace.paddr = paddr;
-	    MemOp op{.vaddr = std::get<0>(item), .paddr = paddr, .size_bytes = static_cast<uint8_t>(std::get<2>(item))};
+	    TraceMemOp op{.vaddr = std::get<0>(item), .paddr = paddr, .size_bytes = static_cast<uint8_t>(std::get<2>(item))};
 	    op.ptw_steps = build_ptw(m_Simulator.get(), p, std::get<0>(item));
 	    data.m_MemOps.push_back(std::move(op));
 	  }
@@ -329,7 +329,7 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
     }
 	    data.m_MemWs.emplace_back(std::get<0>(item), std::get<2>(item), std::get<1>(item), paddr, paddr2);
 	    data.m_mmuTrace.paddr = paddr;
-	    MemOp op{.vaddr = std::get<0>(item), .paddr = paddr, .size_bytes = static_cast<uint8_t>(std::get<2>(item))};
+	    TraceMemOp op{.vaddr = std::get<0>(item), .paddr = paddr, .size_bytes = static_cast<uint8_t>(std::get<2>(item))};
 	    op.ptw_steps = build_ptw(m_Simulator.get(), p, std::get<0>(item));
 	    data.m_MemOps.push_back(std::move(op));
 	  }
@@ -475,4 +475,8 @@ void RawSpike::setLogMem(bool val) {
       manager->set_enable_fast_mem_log(val);
     }
   }
+}
+
+void RawSpike::setCycle(uint64_t Value, uint32_t cid) {
+  m_Simulator->get_core(cid)->get_state()->mcycle->write(Value);
 }

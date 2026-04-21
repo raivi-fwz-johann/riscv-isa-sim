@@ -32,7 +32,7 @@ void dump_regs(const std::vector<RegValue>& regs)
   std::cout << "]";
 }
 
-void dump_mem_ops(const std::vector<MemOp>& mem_ops)
+void dump_mem_ops(const std::vector<TraceMemOp>& mem_ops)
 {
   std::cout << "[";
   for (size_t i = 0; i < mem_ops.size(); ++i) {
