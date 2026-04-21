@@ -23,6 +23,8 @@
 #define INST_COUNT_TO_LOG 10000000
 
 class InstInfoHolder;
+class PathHandler;
+class RawSim;
 
 class FuncSimAdapter {
 public:
@@ -50,10 +52,18 @@ public:
   virtual void replay(uint64_t InstUId, uint32_t CId = 0) = 0;
   virtual InstTrace fetchInstOnly(uint64_t Pc, uint32_t CId = 0,
                                   uint64_t IId = INVALID_INST_ID) = 0;
+  virtual RawSim *getRawSim() = 0;
   virtual uint64_t vaddr2paddr(uint64_t vaddr, uint32_t CId) const = 0;
+  virtual void setCycle(uint64_t value, uint32_t CId = 0) = 0;
   virtual bool inROI(uint32_t cid = 0) const = 0;
+  virtual bool inWFI(uint32_t cid = 0) const = 0;
   virtual uint64_t getCurrPc(uint32_t cid = 0) const = 0;
   virtual uint64_t getConfiguredNPc(uint32_t cid = 0) const = 0;
+  virtual const PathHandler &getPathHandler(uint32_t CId) const = 0;
+  virtual uint64_t getCurrInstNPc(uint32_t CId) const = 0;
+  virtual void setInterleave(size_t val) = 0;
+  virtual void setLogMem(bool val) = 0;
+  virtual void setLogCommits(bool log_commits, bool is_fast, uint32_t cid = 0) = 0;
 
   virtual InstInfoHolder &correctHolder(uint32_t CId) = 0;
   virtual const InstInfoHolder &correctHolder(uint32_t CId) const = 0;

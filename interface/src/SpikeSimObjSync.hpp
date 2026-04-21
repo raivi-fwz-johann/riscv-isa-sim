@@ -12,6 +12,8 @@ class RawSpike;
 
 class SpikeSimObjSync : public FuncSimAdapter {
 public:
+  static SpikeSimObjSync &globalInstance();
+
   SpikeSimObjSync();
   ~SpikeSimObjSync() override;
 

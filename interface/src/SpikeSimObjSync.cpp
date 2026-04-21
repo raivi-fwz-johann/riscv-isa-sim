@@ -11,6 +11,11 @@
    ((x) & 0x3f) < 0x3f ? 6 : \
    8)
 
+SpikeSimObjSync &SpikeSimObjSync::globalInstance() {
+  static SpikeSimObjSync instance;
+  return instance;
+}
+
 SpikeSimObjSync::SpikeSimObjSync() : m_SimImpl(std::make_unique<RawSpike>()) {}
 
 SpikeSimObjSync::~SpikeSimObjSync() { stop(); }
