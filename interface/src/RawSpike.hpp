@@ -37,7 +37,7 @@ public:
   void setInterleave(size_t val);
   void setLogCommits(bool LogCommits, bool IsFast, uint32_t cid);
   void setLogMem(bool val);
-  void setCycle(uint64_t Value, uint32_t cid = 0) override final;
+  void setCycle(uint64_t Value, uint32_t cid = 0);
 
   sim_t *getSpikeSimulator() { return m_Simulator.get(); }
 
