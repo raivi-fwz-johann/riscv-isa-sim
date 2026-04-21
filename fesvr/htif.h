@@ -30,6 +30,7 @@ class htif_t : public chunked_memif_t
   int run();
   bool done();
   int exit_code();
+  bool is_end() const { return should_exit(); }
   void set_expected_xlen(unsigned int m) { expected_xlen = m; }
   virtual memif_t& memif() { return mem; }
   device_list_t& get_devices() { return device_list; }

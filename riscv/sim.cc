@@ -49,7 +49,7 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
              FILE *cmd_file, // needed for command line option --cmd
              std::optional<unsigned long long> instruction_limit)
   : htif_t(args),
-    INTERLEAVE(5000),
+    INTERLEAVE(1),
     cfg(cfg),
     mems(mems),
     dtb_discovery(dtb_discovery),
@@ -564,7 +564,7 @@ void sim_t::idle()
       }
       *instruction_limit -= INTERLEAVE;
     }
-    step(INTERLEAVE);
+    step(1);
   }
 
   if (remote_bitbang)

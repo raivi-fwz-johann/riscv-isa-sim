@@ -237,6 +237,42 @@ int test_disable_host_smoke(const fs::path& dir)
   return 0;
 }
 
+int test_done_tracks_htif_exit(const fs::path& dir)
+{
+  const auto elf = build_elf(
+      dir,
+      "done_on_exit",
+      ".option norvc\n"
+      ".section .tohost,\"aw\",@progbits\n"
+      ".align 8\n"
+      ".globl tohost\n"
+      "tohost:\n"
+      "  .dword 0\n"
+      ".globl fromhost\n"
+      "fromhost:\n"
+      "  .dword 0\n"
+      ".section .text\n"
+      ".globl _start\n"
+      "_start:\n"
+      "  la t0, tohost\n"
+      "  li t1, 1\n"
+      "  sd t1, 0(t0)\n"
+      "1:\n"
+      "  j 1b\n");
+
+  RawSpike sim;
+  sim.init(make_cmd(elf));
+  sim.start();
+
+  for (int i = 0; i < 32 && !sim.done(); ++i) {
+    sim.step(1, 0);
+  }
+  const bool done = sim.done();
+  sim.stop();
+
+  return done ? 0 : 63;
+}
+
 int test_set_cycle_rewrite(const fs::path& dir)
 {
   const auto elf = build_elf(
@@ -277,6 +313,9 @@ int main()
     return rc;
   }
   if (const int rc = test_disable_host_smoke(dir)) {
+    return rc;
+  }
+  if (const int rc = test_done_tracks_htif_exit(dir)) {
     return rc;
   }
   if (const int rc = test_set_cycle_rewrite(dir)) {

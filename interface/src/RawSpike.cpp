@@ -191,7 +191,7 @@ void RawSpike::stop() {
   m_RunHelper.stop(m_Simulator.get());
 }
 
-bool RawSpike::done() const { return m_Simulator->done(); }
+bool RawSpike::done() const { return m_Simulator->done() || m_Simulator->is_end(); }
 
 size_t RawSpike::step(size_t n, uint32_t CId) {
   return m_RunHelper.step(m_Simulator.get(), n, CId);
