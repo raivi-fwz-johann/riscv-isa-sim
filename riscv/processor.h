@@ -238,6 +238,7 @@ public:
   void set_debug(bool value);
   void set_histogram(bool value);
   void enable_log_commits();
+  void set_log_commits(bool value);
   bool get_log_commits_enabled() const { return log_commits_enabled; }
   void reset();
   void step(size_t n); // run for n cycles

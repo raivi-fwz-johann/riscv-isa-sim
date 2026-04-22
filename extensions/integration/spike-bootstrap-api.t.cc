@@ -35,6 +35,9 @@ int main()
   static_assert(std::is_same_v<
       decltype(std::declval<spike_boot_options_t>().checkpoint.snapshot_compress),
       bool>);
+  static_assert(std::is_same_v<
+      decltype(std::declval<spike_boot_options_t>().explicit_isa),
+      std::optional<std::string>>);
 
   {
     const char* argv_raw[] = {"spike", "--save=snap-save", "pk", nullptr};
@@ -58,6 +61,16 @@ int main()
     if (options.htif_args.front() != "none") return 23;
     if (!options.cfg.start_pc.has_value()) return 24;
     if (*options.cfg.start_pc != kCheckpointBootromBase) return 25;
+  }
+
+  {
+    const char* argv_raw[] = {"spike", "--isa", "rv64gc", nullptr};
+    auto options = spike_parse_argv_options(
+        3,
+        const_cast<char**>(argv_raw));
+    if (!options.explicit_isa.has_value()) return 26;
+    if (*options.explicit_isa != "rv64gc") return 27;
+    if (std::string(options.cfg.isa) != "rv64gc") return 28;
   }
 
   {

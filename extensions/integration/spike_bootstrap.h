@@ -27,6 +27,7 @@ struct spike_boot_options_t {
   bool disable_host = false;
   bool memory_option = false;
   bool use_rbb = false;
+  std::optional<std::string> explicit_isa;
   const char* kernel = nullptr;
   const char* initrd = nullptr;
   const char* dtb_file = nullptr;

@@ -7,6 +7,7 @@
 #include "config.h"
 #include "mmu.h"
 #include "platform.h"
+#include "runtime/spike_model_compat.h"
 #include "../VERSION"
 #include <dlfcn.h>
 #include <fesvr/option_parser.h>
@@ -360,7 +361,7 @@ spike_boot_options_t spike_parse_argv_options(int argc, char** argv)
   parser.option(0, "l2", 1, [&](const char* s){options.l2.reset(cache_sim_t::construct(s, "L2$"));});
   parser.option(0, "big-endian", 0, [&](const char UNUSED *s){options.cfg.endianness = endianness_big;});
   parser.option(0, "log-cache-miss", 0, [&](const char UNUSED *s){options.log_cache = true;});
-  parser.option(0, "isa", 1, [&](const char* s){options.cfg.isa = s;});
+  parser.option(0, "isa", 1, [&](const char* s){options.cfg.isa = s; options.explicit_isa = std::string(s);});
   parser.option(0, "pmpregions", 1, [&](const char* s){options.cfg.pmpregions = atoul_safe(s);});
   parser.option(0, "pmpgranularity", 1, [&](const char* s){options.cfg.pmpgranularity = atoul_safe(s);});
   parser.option(0, "priv", 1, [&](const char* s){options.cfg.priv = s;});
@@ -524,6 +525,7 @@ spike_boot_result_t spike_bootstrap(
     }
   }
 
+  spike_explicit_isa_scope_t explicit_isa_scope(options.explicit_isa);
   result.sim = std::make_unique<sim_t>(
       result.cfg.get(),
       options.halted,
@@ -541,6 +543,9 @@ spike_boot_result_t spike_bootstrap(
 
   if (auto* runtime = result.sim->runtime_context()) {
     runtime->set_checkpoint_controller(make_checkpoint_controller(options.checkpoint));
+    if (auto* compat = runtime->model_compat()) {
+      compat->set_preserve_lr_sc_reservation_across_interleave(true);
+    }
   }
 
   const bool has_elf = !options.htif_args.empty() && options.htif_args.front() != "none";

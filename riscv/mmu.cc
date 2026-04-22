@@ -6,6 +6,7 @@
 #include "memif.h"
 #include "simif.h"
 #include "processor.h"
+#include "runtime/spike_model_compat.h"
 #include "decode_macros.h"
 #include "platform.h"
 #include "triggers.h"
@@ -56,6 +57,7 @@ mmu_t::mmu_t(simif_t* sim, endianness_t endianness, processor_t* proc, reg_t cac
 
 mmu_t::~mmu_t()
 {
+  spike_forget_fetch_paddr(this);
 }
 
 void mmu_t::flush_icache()
@@ -118,6 +120,8 @@ inline mmu_t::insn_parcel_t mmu_t::perform_intrapage_fetch(reg_t vaddr, uintptr_
     memcpy(&res, (char*)host_addr, sizeof(res));
   else if (!mmio_fetch(paddr, sizeof(res), (uint8_t*)&res))
     throw trap_instruction_access_fault(proc->state.v, vaddr, 0, 0);
+
+  spike_note_fetch_paddr(this, paddr);
 
   return res;
 }

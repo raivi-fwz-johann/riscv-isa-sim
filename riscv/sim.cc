@@ -4,6 +4,7 @@
 #include "dtb_discovery.h"
 #include "sim.h"
 #include "runtime/spike_device_observe_registry.h"
+#include "runtime/spike_model_compat.h"
 #include "mmu.h"
 #include "runtime/spike_log_manager.h"
 #include "dts.h"
@@ -186,7 +187,7 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
       std::cerr << "core (" << cpu_idx << ") has an invalid or missing 'riscv,isa'\n";
       exit(1);
     }
-
+    isa_str = spike_resolve_boot_isa_override(dtb_file, isa_str);
     // handle hartid
     uint32_t hartid;
     rc = fdt_parse_hartid(fdt, cpu_offset, &hartid);
@@ -328,7 +329,9 @@ void sim_t::step(size_t n)
     if (current_step == INTERLEAVE)
     {
       current_step = 0;
-      procs[current_proc]->get_mmu()->yield_load_reservation();
+      if (spike_should_yield_load_reservation_on_interleave(this)) {
+        procs[current_proc]->get_mmu()->yield_load_reservation();
+      }
       if (++current_proc == procs.size()) {
         current_proc = 0;
         reg_t rtc_ticks = INTERLEAVE / INSNS_PER_RTC_TICK;
@@ -381,11 +384,14 @@ void sim_t::configure_log(bool enable_log, bool enable_commitlog)
 {
   log = enable_log;
 
-  if (!enable_commitlog)
-    return;
+  if (auto* runtime = runtime_context()) {
+    if (auto* manager = runtime->log_manager()) {
+      manager->set_enable_raw_commit_log(enable_commitlog);
+    }
+  }
 
   for (processor_t *proc : procs) {
-    proc->enable_log_commits();
+    proc->set_log_commits(enable_commitlog);
   }
 }
 

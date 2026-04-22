@@ -190,6 +190,16 @@ void processor_t::enable_log_commits()
   build_opcode_map();
 }
 
+void processor_t::set_log_commits(bool value)
+{
+  if (log_commits_enabled == value) {
+    return;
+  }
+  log_commits_enabled = value;
+  mmu->flush_tlb(); // the TLB caches this setting
+  build_opcode_map();
+}
+
 void processor_t::reset()
 {
   xlen = isa.get_max_xlen();

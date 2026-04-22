@@ -11,6 +11,7 @@
 #include "sim.h"
 #include "processor.h"
 #include "memtracer.h"
+#include "runtime/spike_model_compat.h"
 #include "../fesvr/byteorder.h"
 #include "triggers.h"
 #include "cfg.h"
@@ -349,7 +350,7 @@ public:
     entry->data = fetch;
 
     auto [check_tracer, _, paddr] = access_tlb(tlb_insn, addr, TLB_FLAGS, TLB_CHECK_TRACER);
-    entry->data.pc_ppn = paddr;
+    entry->data.pc_ppn = spike_fetch_paddr(this, paddr);
     if (unlikely(check_tracer)) {
       if (tracer.interested_in_range(paddr, paddr + 1, FETCH)) {
         entry->tag = -1;
@@ -398,6 +399,7 @@ public:
     bool mmio = allowed_flags & TLB_MMIO & entry.tag;
     auto host_addr = mmio ? 0 : entry.data.host_addr + pgoff;
     auto paddr = entry.data.target_addr + pgoff;
+    spike_note_fetch_paddr(this, paddr);
     return std::make_tuple(hit, host_addr, paddr);
   }
 

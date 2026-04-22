@@ -237,6 +237,30 @@ int test_disable_host_smoke(const fs::path& dir)
   return 0;
 }
 
+int test_disable_raw_commit_log(const fs::path& dir)
+{
+  const auto elf = build_elf(
+      dir,
+      "disable_raw_commit_log",
+      ".option norvc\n"
+      ".section .text\n"
+      ".globl _start\n"
+      "_start:\n"
+      "1:\n"
+      "  addi t0, t0, 1\n"
+      "  j 1b\n");
+
+  RawSpike sim;
+  sim.init("spike --log-commits --instructions=16 --isa=rv64gc " + elf.string());
+  sim.start();
+  sim.setLogCommits(false, false, 0);
+
+  const bool enabled = sim.getSpikeSimulator()->get_core(0)->get_log_commits_enabled();
+  sim.stop();
+
+  return enabled ? 64 : 0;
+}
+
 int test_done_tracks_htif_exit(const fs::path& dir)
 {
   const auto elf = build_elf(
@@ -313,6 +337,9 @@ int main()
     return rc;
   }
   if (const int rc = test_disable_host_smoke(dir)) {
+    return rc;
+  }
+  if (const int rc = test_disable_raw_commit_log(dir)) {
     return rc;
   }
   if (const int rc = test_done_tracks_htif_exit(dir)) {

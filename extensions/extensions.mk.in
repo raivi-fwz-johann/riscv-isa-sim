@@ -12,6 +12,7 @@ extensions_install_hdrs = \
 	runtime/runtime_context.h \
 	runtime/spike_host_policy.h \
 	runtime/spike_log_manager.h \
+	runtime/spike_model_compat.h \
 	integration/spike_bootstrap.h \
 	checkpoint/checkpoint_controller.h \
 	checkpoint/checkpoint_files.h \
@@ -22,6 +23,7 @@ extensions_srcs = \
 	runtime/runtime_context.cc \
 	runtime/spike_host_policy.cc \
 	runtime/spike_log_manager.cc \
+	runtime/spike_model_compat.cc \
 	integration/spike_bootstrap.cc \
 	checkpoint/checkpoint_controller.cc \
 	checkpoint/checkpoint_files.cc \
@@ -30,6 +32,7 @@ extensions_srcs = \
 extensions_test_srcs = \
 	runtime/dispatcher-defaults.t.cc \
 	runtime/spike-log-manager.t.cc \
+	runtime/spike-model-compat.t.cc \
 	runtime/custom-dispatcher-inject.t.cc \
 	runtime/device-observe-registry.t.cc \
 	runtime/mmu-observe-dispatch.t.cc \

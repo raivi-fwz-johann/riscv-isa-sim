@@ -58,6 +58,12 @@ static inline bool fast_commit_log_active(processor_t* p)
   return log_manager && log_manager->enable_fast_commit_log();
 }
 
+static inline bool raw_commit_log_active(processor_t* p)
+{
+  auto* log_manager = get_log_manager(p);
+  return !log_manager || log_manager->enable_raw_commit_log();
+}
+
 static inline bool commit_hook_active(processor_t* p)
 {
   return commits_log_active(p) || fast_commit_log_active(p);
@@ -123,6 +129,10 @@ static void commit_log_print_insn(processor_t *p, reg_t pc, insn_t insn)
         return;
       }
     }
+  }
+
+  if (!raw_commit_log_active(p)) {
+    return;
   }
 
   if (!commits_log_active(p)) {
