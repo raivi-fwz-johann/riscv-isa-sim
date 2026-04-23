@@ -327,6 +327,11 @@ void mmu_t::load_slow_path(reg_t original_addr, std::size_t len,
 
   auto access_info = generate_access_info(original_addr, LOAD, xlate_flags);
   reg_t transformed_addr = access_info.transformed_vaddr;
+  reg_t log_paddr = 0;
+  if (unlikely(mem_log_active())) {
+    auto log_len = std::min<reg_t>(len, PGSIZE - transformed_addr % PGSIZE);
+    log_paddr = translate(access_info, log_len);
+  }
 
   if (check_triggers_load)
     check_triggers(triggers::OPERATION_LOAD,
@@ -358,7 +363,7 @@ void mmu_t::load_slow_path(reg_t original_addr, std::size_t len,
       transformed_addr, access_info.effective_virt, len, bytes);
 
   if (unlikely(mem_log_active()))
-    proc->state.log_mem_read.push_back(std::make_tuple(original_addr, reg_from_bytes(len, bytes), len));
+    proc->state.log_mem_read.push_back(std::make_tuple(original_addr, reg_from_bytes(len, bytes), len, log_paddr));
 }
 
 inline void mmu_t::perform_intrapage_store(reg_t vaddr, uintptr_t host_addr, reg_t paddr, reg_t len, const uint8_t* bytes, xlate_flags_t xlate_flags)
@@ -418,6 +423,11 @@ void mmu_t::store_slow_path(reg_t original_addr, std::size_t len,
 
   auto access_info = generate_access_info(original_addr, STORE, xlate_flags);
   reg_t transformed_addr = access_info.transformed_vaddr;
+  reg_t log_paddr = 0;
+  if (actually_store && proc && unlikely(mem_log_active())) {
+    auto log_len = std::min<reg_t>(len, PGSIZE - transformed_addr % PGSIZE);
+    log_paddr = translate(access_info, log_len);
+  }
 
   if (check_triggers_store) {
     if (actually_store) {
@@ -451,7 +461,8 @@ void mmu_t::store_slow_path(reg_t original_addr, std::size_t len,
     for (size_t offset = 0; offset < len; offset += sizeof(reg_t)) {
       auto this_size = std::min(len - offset, sizeof(reg_t));
       auto this_data = reg_from_bytes(this_size, bytes + offset);
-      proc->state.log_mem_write.push_back(std::make_tuple(original_addr + offset, this_data, this_size));
+      proc->state.log_mem_write.push_back(
+        std::make_tuple(original_addr + offset, this_data, this_size, log_paddr + offset));
     }
   }
 }
