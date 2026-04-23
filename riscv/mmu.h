@@ -116,7 +116,7 @@ public:
       }
     }
     bool aligned = (addr & (sizeof(T) - 1)) == 0;
-    auto [tlb_hit, host_addr, _] = access_tlb(tlb_load, addr);
+    auto [tlb_hit, host_addr, paddr] = access_tlb(tlb_load, addr);
 
     if (likely(!xlate_flags.is_special_access() && aligned && tlb_hit)) {
       res = *(target_endian<T>*)host_addr;
@@ -127,7 +127,8 @@ public:
 
     MMU_OBSERVE_LOAD(addr,from_target(res),sizeof(T));
     if (!used_slow_path && unlikely(mem_log_active()))
-      proc->state.log_mem_read.push_back(std::make_tuple(addr, reg_t(from_target(res)), uint8_t(sizeof(T))));
+      proc->state.log_mem_read.push_back(
+        std::make_tuple(addr, reg_t(from_target(res)), uint8_t(sizeof(T)), paddr));
 
     return from_target(res);
   }
@@ -171,7 +172,7 @@ public:
       }
     }
     bool aligned = (addr & (sizeof(T) - 1)) == 0;
-    auto [tlb_hit, host_addr, _] = access_tlb(tlb_store, addr);
+    auto [tlb_hit, host_addr, paddr] = access_tlb(tlb_store, addr);
 
     if (!xlate_flags.is_special_access() && likely(aligned && tlb_hit)) {
       *(target_endian<T>*)host_addr = to_target(val);
@@ -184,7 +185,8 @@ public:
       *real_store = true;
     }
     if (!used_slow_path && unlikely(mem_log_active()))
-      proc->state.log_mem_write.push_back(std::make_tuple(addr, reg_t(val), uint8_t(sizeof(T))));
+      proc->state.log_mem_write.push_back(
+        std::make_tuple(addr, reg_t(val), uint8_t(sizeof(T)), paddr));
   }
 
   template<typename T>

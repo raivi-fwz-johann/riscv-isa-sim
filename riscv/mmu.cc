@@ -358,7 +358,10 @@ void mmu_t::load_slow_path(reg_t original_addr, std::size_t len,
       transformed_addr, access_info.effective_virt, len, bytes);
 
   if (unlikely(mem_log_active()))
-    proc->state.log_mem_read.push_back(std::make_tuple(original_addr, reg_from_bytes(len, bytes), len));
+  {
+    auto [_, __, paddr] = access_tlb(tlb_load, original_addr, TLB_FLAGS);
+    proc->state.log_mem_read.push_back(std::make_tuple(original_addr, reg_from_bytes(len, bytes), len, paddr));
+  }
 }
 
 inline void mmu_t::perform_intrapage_store(reg_t vaddr, uintptr_t host_addr, reg_t paddr, reg_t len, const uint8_t* bytes, xlate_flags_t xlate_flags)
@@ -451,7 +454,9 @@ void mmu_t::store_slow_path(reg_t original_addr, std::size_t len,
     for (size_t offset = 0; offset < len; offset += sizeof(reg_t)) {
       auto this_size = std::min(len - offset, sizeof(reg_t));
       auto this_data = reg_from_bytes(this_size, bytes + offset);
-      proc->state.log_mem_write.push_back(std::make_tuple(original_addr + offset, this_data, this_size));
+      auto [_, __, paddr] = access_tlb(tlb_store, original_addr + offset, TLB_FLAGS);
+      proc->state.log_mem_write.push_back(
+        std::make_tuple(original_addr + offset, this_data, this_size, paddr));
     }
   }
 }
