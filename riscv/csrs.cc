@@ -166,9 +166,11 @@ void pmpaddr_csr_t::verify_permissions(insn_t insn, bool write) const {
 }
 
 reg_t pmpaddr_csr_t::read() const noexcept {
+  reg_t res;
   if ((cfg & PMP_A) >= PMP_NAPOT)
-    return val | (~proc->pmp_tor_mask() >> 1);
-  return val & proc->pmp_tor_mask();
+    res = val | (~proc->pmp_tor_mask() >> 1);
+  res = val & proc->pmp_tor_mask();
+  return (res & 0xfffffffffc) >> 2;
 }
 
 bool pmpaddr_csr_t::unlogged_write(const reg_t val) noexcept {
