@@ -338,7 +338,9 @@ public:
 
   inline icache_entry_t* refill_icache(reg_t addr, icache_entry_t* entry)
   {
+    spike_forget_fetch_paddr(this);
     insn_bits_t insn = fetch_insn_parcel(addr);
+    auto paddr_to_record = spike_fetch_paddr(this, addr);
     unsigned length = insn_length(insn);
 
     for (unsigned pos = sizeof(insn_parcel_t); pos < length; pos += sizeof(insn_parcel_t)) {
@@ -352,7 +354,7 @@ public:
     entry->data = fetch;
 
     auto [check_tracer, _, paddr] = access_tlb(tlb_insn, addr, TLB_FLAGS, TLB_CHECK_TRACER);
-    entry->data.pc_ppn = spike_fetch_paddr(this, paddr);
+    entry->data.pc_ppn = paddr_to_record;
     if (unlikely(check_tracer)) {
       if (tracer.interested_in_range(paddr, paddr + 1, FETCH)) {
         entry->tag = -1;
@@ -401,7 +403,9 @@ public:
     bool mmio = allowed_flags & TLB_MMIO & entry.tag;
     auto host_addr = mmio ? 0 : entry.data.host_addr + pgoff;
     auto paddr = entry.data.target_addr + pgoff;
-    spike_note_fetch_paddr(this, paddr);
+    if (hit && tlb == tlb_insn) {
+      spike_note_fetch_paddr(this, paddr);
+    }
     return std::make_tuple(hit, host_addr, paddr);
   }
 
