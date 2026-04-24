@@ -252,7 +252,10 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
   data.m_Bits = observed.bits;
   data.m_PPN = observed.paddr;
   data.m_PPN2 = observed.paddr2;
-  data.m_NPc = observed.npc == ERROR_PC_ADDR ? p->get_state()->pc : observed.npc;
+  data.m_NPc = observed.npc;
+  if (data.m_NPc == ERROR_PC_ADDR) {
+    data.m_NPc = p->get_state()->pc;
+  }
   if (!observed.in_trap && data.m_Bits != 0) {
     const auto inst_len = static_cast<uint64_t>(insn_t(data.m_Bits).length());
     const auto page0 = std::min<uint64_t>(inst_len, PGSIZE - (data.m_Pc % PGSIZE));
@@ -316,11 +319,13 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
   data.m_MemWs.clear();
   if (m_LogMem) {
     for (auto &item : p->get_state()->log_mem_read) {
-      uint64_t paddr = 0;
-    try {
-      paddr = p->get_mmu()->vaddr2paddr(std::get<0>(item), std::get<2>(item), LOAD);
-    } catch (...) {
-      paddr = 0;
+      uint64_t paddr = std::get<3>(item);
+    if (paddr == 0) {
+      try {
+        paddr = p->get_mmu()->vaddr2paddr(std::get<0>(item), std::get<2>(item), LOAD);
+      } catch (...) {
+        paddr = 0;
+      }
     }
     uint64_t paddr2 = paddr;
     const auto page0 = std::min<uint64_t>(std::get<2>(item), PGSIZE - (std::get<0>(item) % PGSIZE));
@@ -338,11 +343,13 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
 	    data.m_MemOps.push_back(std::move(op));
 	  }
 	  for (auto &item : p->get_state()->log_mem_write) {
-    uint64_t paddr = 0;
-    try {
-      paddr = p->get_mmu()->vaddr2paddr(std::get<0>(item), std::get<2>(item), STORE);
-    } catch (...) {
-      paddr = 0;
+    uint64_t paddr = std::get<3>(item);
+    if (paddr == 0) {
+      try {
+        paddr = p->get_mmu()->vaddr2paddr(std::get<0>(item), std::get<2>(item), STORE);
+      } catch (...) {
+        paddr = 0;
+      }
     }
     uint64_t paddr2 = paddr;
     const auto page0 = std::min<uint64_t>(std::get<2>(item), PGSIZE - (std::get<0>(item) % PGSIZE));
@@ -361,8 +368,6 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
 	  }
 	  }
 #endif
-
-  m_StateExporter->reset_observed(CId);
 
 #if defined (FULL_TRACE)
   auto state = p->get_state();

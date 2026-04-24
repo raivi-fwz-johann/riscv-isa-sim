@@ -35,6 +35,7 @@ public:
 
   void observe_exec(size_t hart_id, insn_fetch_t* in, reg_t pc, reg_t npc);
   reg_t observe_trap(size_t hart_id, void* in, reg_t pc, trap_t& t);
+  void observe_trap_target(size_t hart_id, reg_t npc);
   void observe_mmu_walk(const spike_mmu_walk_observe_t& event);
 
   void set_mmu_paddr(size_t hart_id, uint64_t paddr);

@@ -445,6 +445,11 @@ void processor_t::debug_output_log(std::stringstream *s)
 void processor_t::take_trap(trap_t& t, reg_t epc)
 {
   insn_fetch_t fetch{};
+  auto notify_trap_target = [&]() {
+    if (auto* hook = get_hook_dispatcher(this)) {
+      hook->on_trap_target(get_id(), epc, state.pc);
+    }
+  };
   try {
     fetch = mmu->load_insn(epc);
   } catch (...) {
@@ -477,6 +482,7 @@ void processor_t::take_trap(trap_t& t, reg_t epc)
     } else {
       state.pc = DEBUG_ROM_TVEC;
     }
+    notify_trap_target();
     return;
   }
 
@@ -601,6 +607,8 @@ void processor_t::take_trap(trap_t& t, reg_t epc)
     if (state.tcontrol) state.tcontrol->write((state.tcontrol->read() & CSR_TCONTROL_MTE) ? CSR_TCONTROL_MPTE : 0);
     set_privilege(PRV_M, false);
   }
+
+  notify_trap_target();
 }
 
 void processor_t::take_trigger_action(triggers::action_t action, reg_t breakpoint_tval, reg_t epc, bool virt)

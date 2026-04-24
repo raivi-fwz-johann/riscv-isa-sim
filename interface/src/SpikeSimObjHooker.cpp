@@ -40,6 +40,13 @@ reg_t SpikeSimObjHooker::on_trap(uint32_t hart_id, void *in, reg_t pc, trap_t &t
   return 0;
 }
 
+void SpikeSimObjHooker::on_trap_target(uint32_t hart_id, reg_t epc, reg_t npc) {
+  (void)epc;
+  if (m_SimObj->m_StateExporter) {
+    m_SimObj->m_StateExporter->observe_trap_target(hart_id, npc);
+  }
+}
+
 void SpikeSimObjHooker::on_device_uart_tx(abstract_device_t* device, uint8_t byte) {
   if (m_SimObj->m_RoiState) {
     m_SimObj->m_RoiState->on_device_uart_tx(device, byte);

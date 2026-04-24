@@ -38,11 +38,15 @@ void spike_state_exporter_t::observe_exec(
   auto& observed = core->snapshot.observed;
   observed.valid = true;
   observed.in_trap = false;
+  observed.has_tval2 = false;
   observed.pc = pc;
   observed.npc = ERROR_PC_ADDR;
   observed.bits = in ? in->insn.bits() : 0;
   observed.paddr = in ? in->pc_ppn : ERROR_PC_ADDR;
   observed.paddr2 = ERROR_PC_ADDR;
+  observed.cause = 0;
+  observed.tval = 0;
+  observed.tval2 = 0;
   if (npc != 0 && !invalid_pc(npc)) {
     observed.npc = npc;
   }
@@ -70,6 +74,7 @@ reg_t spike_state_exporter_t::observe_trap(
   auto& observed = core->snapshot.observed;
   observed.valid = true;
   observed.in_trap = true;
+  observed.npc = ERROR_PC_ADDR;
   observed.pc = pc;
   observed.bits = in ? static_cast<insn_fetch_t*>(in)->insn.bits() : 0;
   observed.paddr = in ? static_cast<insn_fetch_t*>(in)->pc_ppn : ERROR_PC_ADDR;
@@ -89,6 +94,23 @@ reg_t spike_state_exporter_t::observe_trap(
   core->snapshot.mmu_trace.excp_cause = observed.cause;
 
   return 0;
+}
+
+void spike_state_exporter_t::observe_trap_target(size_t hart_id, reg_t npc)
+{
+  auto* core = core_state(hart_id);
+  if (!core) {
+    return;
+  }
+
+  auto& observed = core->snapshot.observed;
+  if (!observed.valid || !observed.in_trap) {
+    return;
+  }
+
+  if (npc != 0 && !invalid_pc(npc)) {
+    observed.npc = npc;
+  }
 }
 
 void spike_state_exporter_t::observe_mmu_walk(
