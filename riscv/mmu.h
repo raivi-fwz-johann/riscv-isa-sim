@@ -88,6 +88,7 @@ struct mem_access_info_t {
   const bool effective_virt;
   const xlate_flags_t flags;
   const access_type type;
+  bool readonly{false};
 };
 
 void throw_access_exception(bool virt, reg_t addr, access_type type);
@@ -108,7 +109,6 @@ public:
   template<typename T>
   T ALWAYS_INLINE load(reg_t addr, xlate_flags_t xlate_flags = {}) {
     target_endian<T> res;
-    bool used_slow_path = false;
     if (auto* hook = hook_dispatcher()) {
       if (!hook->should_continue()) {
         target_endian<T> zero{};
@@ -116,19 +116,36 @@ public:
       }
     }
     bool aligned = (addr & (sizeof(T) - 1)) == 0;
-    auto [tlb_hit, host_addr, paddr] = access_tlb(tlb_load, addr);
+    auto [tlb_hit, host_addr, _] = access_tlb(tlb_load, addr);
+
+    if (unlikely(mem_log_active())) {
+      if (proc->state.log_mem_read.empty() || std::get<0>(proc->state.log_mem_read.back()) != addr) {
+        // Record it first to prevent trap-time load metadata loss.
+        proc->state.log_mem_read.push_back(
+          std::make_tuple(addr, reg_t(0), uint8_t(sizeof(T)), addr));
+        auto access_info = generate_access_info(addr, LOAD, {});
+        access_info.readonly = true;
+        reg_t paddr = translate(access_info, sizeof(T));
+        std::get<3>(proc->state.log_mem_read.back()) = paddr;
+      }
+    }
 
     if (likely(!xlate_flags.is_special_access() && aligned && tlb_hit)) {
       res = *(target_endian<T>*)host_addr;
     } else {
-      used_slow_path = true;
       load_slow_path(addr, sizeof(T), (uint8_t*)&res, xlate_flags);
     }
 
+    if (unlikely(mem_log_active())) {
+      if (!proc->state.log_mem_read.empty() && std::get<0>(proc->state.log_mem_read.back()) == addr) {
+        std::get<1>(proc->state.log_mem_read.back()) = reg_t(from_target(res));
+      } else {
+        proc->state.log_mem_read.push_back(
+          std::make_tuple(addr, reg_t(from_target(res)), uint8_t(sizeof(T)), reg_t(0)));
+      }
+    }
+
     MMU_OBSERVE_LOAD(addr,from_target(res),sizeof(T));
-    if (!used_slow_path && unlikely(mem_log_active()))
-      proc->state.log_mem_read.push_back(
-        std::make_tuple(addr, reg_t(from_target(res)), uint8_t(sizeof(T)), paddr));
 
     return from_target(res);
   }
@@ -158,6 +175,18 @@ public:
 
   template<typename T>
   void ALWAYS_INLINE store(reg_t addr, T val, xlate_flags_t xlate_flags = {}) {
+    if (unlikely(mem_log_active())) {
+      if (proc->state.log_mem_write.empty() || std::get<0>(proc->state.log_mem_write.back()) != addr) {
+        // Record it first to prevent trap-time store metadata loss.
+        proc->state.log_mem_write.push_back(
+          std::make_tuple(addr, reg_t(val), uint8_t(sizeof(T)), addr));
+        auto access_info = generate_access_info(addr, STORE, {});
+        access_info.readonly = true;
+        reg_t paddr = translate(access_info, sizeof(T));
+        std::get<3>(proc->state.log_mem_write.back()) = paddr;
+      }
+    }
+
     MMU_OBSERVE_STORE(addr, val, sizeof(T));
     auto* hook = hook_dispatcher();
     bool used_slow_path = false;
@@ -184,9 +213,14 @@ public:
     if (real_store) {
       *real_store = true;
     }
-    if (!used_slow_path && unlikely(mem_log_active()))
-      proc->state.log_mem_write.push_back(
-        std::make_tuple(addr, reg_t(val), uint8_t(sizeof(T)), paddr));
+    if (!used_slow_path && unlikely(mem_log_active())) {
+      if (!proc->state.log_mem_write.empty() && std::get<0>(proc->state.log_mem_write.back()) == addr) {
+        std::get<3>(proc->state.log_mem_write.back()) = paddr;
+      } else {
+        proc->state.log_mem_write.push_back(
+          std::make_tuple(addr, reg_t(val), uint8_t(sizeof(T)), paddr));
+      }
+    }
   }
 
   template<typename T>
@@ -505,7 +539,7 @@ private:
   const char* fill_from_mmio(reg_t vaddr, reg_t paddr);
 
   // perform a stage2 translation for a given guest address
-  reg_t s2xlate(reg_t gva, reg_t gpa, access_type type, access_type trap_type, bool virt, bool hlvx, bool is_for_vs_pt_addr);
+  reg_t s2xlate(reg_t gva, reg_t gpa, access_type type, access_type trap_type, bool virt, bool hlvx, bool is_for_vs_pt_addr, bool readonly = false);
 
   // perform a page table walk for a given VA; set referenced/dirty bits
   reg_t walk(mem_access_info_t access_info);

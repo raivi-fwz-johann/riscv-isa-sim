@@ -458,11 +458,15 @@ void mmu_t::store_slow_path(reg_t original_addr, std::size_t len,
   }
 
   if (actually_store && proc && unlikely(mem_log_active())) {
-    for (size_t offset = 0; offset < len; offset += sizeof(reg_t)) {
-      auto this_size = std::min(len - offset, sizeof(reg_t));
-      auto this_data = reg_from_bytes(this_size, bytes + offset);
-      proc->state.log_mem_write.push_back(
-        std::make_tuple(original_addr + offset, this_data, this_size, log_paddr + offset));
+    if (!proc->state.log_mem_write.empty() && std::get<0>(proc->state.log_mem_write.back()) == original_addr) {
+      std::get<3>(proc->state.log_mem_write.back()) = log_paddr;
+    } else {
+      for (size_t offset = 0; offset < len; offset += sizeof(reg_t)) {
+        auto this_size = std::min(len - offset, sizeof(reg_t));
+        auto this_data = reg_from_bytes(this_size, bytes + offset);
+        proc->state.log_mem_write.push_back(
+          std::make_tuple(original_addr + offset, this_data, this_size, log_paddr + offset));
+      }
     }
   }
 }
@@ -582,7 +586,7 @@ reg_t mmu_t::pmp_homogeneous(reg_t addr, reg_t len)
   return true;
 }
 
-reg_t mmu_t::s2xlate(reg_t gva, reg_t gpa, access_type type, access_type trap_type, bool virt, bool hlvx, bool is_for_vs_pt_addr)
+reg_t mmu_t::s2xlate(reg_t gva, reg_t gpa, access_type type, access_type trap_type, bool virt, bool hlvx, bool is_for_vs_pt_addr, bool readonly)
 {
   if (!virt)
     return gpa;
@@ -651,7 +655,8 @@ reg_t mmu_t::s2xlate(reg_t gva, reg_t gpa, access_type type, access_type trap_ty
         if ((pte & ad) != ad) {
           if (hade) {
             // set accessed and possibly dirty bits
-            pte_store(pte_paddr, pte | ad, gva, virt, trap_type, vm.ptesize);
+            if (!readonly)
+              pte_store(pte_paddr, pte | ad, gva, virt, trap_type, vm.ptesize);
           } else {
             // take exception if access or possibly dirty bit is not set.
             break;
@@ -744,7 +749,8 @@ reg_t mmu_t::walk(mem_access_info_t access_info)
         type,
         virt,
         hlvx,
-        false); // zero-extend from xlen
+        false,
+        access_info.readonly); // zero-extend from xlen
     mmu_walk.levels = 0;
     mmu_walk.paddr = paddr;
     emit_mmu_walk();
@@ -775,7 +781,7 @@ reg_t mmu_t::walk(mem_access_info_t access_info)
     reg_t idx = (addr >> (PGSHIFT + ptshift)) & ((1 << vm.idxbits) - 1);
 
     // check that physical address of PTE is legal
-    auto pte_paddr = s2xlate(addr, base + idx * vm.ptesize, LOAD, type, virt, false, true);
+    auto pte_paddr = s2xlate(addr, base + idx * vm.ptesize, LOAD, type, virt, false, true, access_info.readonly);
     mmu_walk.pte_paddr[i] = pte_paddr;
     reg_t pte = pte_load(pte_paddr, addr, virt, type, vm.ptesize);
     reg_t ppn = (pte & ~reg_t(PTE_ATTR)) >> PTE_PPN_SHIFT;
@@ -837,9 +843,10 @@ reg_t mmu_t::walk(mem_access_info_t access_info)
         if (hade) {
           // Check for write permission to the first-stage PT in second-stage
           // PTE and set the D bit in the second-stage PTE if needed
-          s2xlate(addr, base + idx * vm.ptesize, STORE, type, virt, false, true);
+          s2xlate(addr, base + idx * vm.ptesize, STORE, type, virt, false, true, access_info.readonly);
           // set accessed and possibly dirty bits.
-          pte_store(pte_paddr, pte | ad, addr, virt, type, vm.ptesize);
+          if (!access_info.readonly)
+            pte_store(pte_paddr, pte | ad, addr, virt, type, vm.ptesize);
         } else {
           // take exception if access or possibly dirty bit is not set.
           break;
@@ -853,7 +860,7 @@ reg_t mmu_t::walk(mem_access_info_t access_info)
                         | (vpn & ((reg_t(1) << napot_bits) - 1))
                         | (vpn & ((reg_t(1) << ptshift) - 1))) << PGSHIFT;
       reg_t phys = page_base | (addr & page_mask);
-      reg_t paddr = s2xlate(addr, phys, type, type, virt, hlvx, false);
+      reg_t paddr = s2xlate(addr, phys, type, type, virt, hlvx, false, access_info.readonly);
       mmu_walk.paddr = paddr;
       emit_mmu_walk();
       return paddr & ~page_mask;
