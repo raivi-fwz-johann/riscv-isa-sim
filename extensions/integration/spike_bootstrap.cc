@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cinttypes>
+#include <cstring>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -93,6 +94,7 @@ static void help(int exit_code = 1)
   fprintf(stderr, "  --load=<name>         Load checkpoint files with prefix <name>\n");
   fprintf(stderr, "  --compress            Compress checkpoint mainram as .zip\n");
   fprintf(stderr, "  --compress-zstd       Compress checkpoint mainram as .zst\n");
+  fprintf(stderr, "  --memsize=<size>      Memsize in unit of GB [default 2, options: 2, 4, 8]\n");
 
   exit(exit_code);
 }
@@ -271,6 +273,27 @@ static unsigned long atoul_nonzero_safe(const char* s)
   return res;
 }
 
+static void apply_memsize_option(spike_boot_options_t& options, const char* s)
+{
+  size_t memory_size_gib = 2;
+
+  if (strcmp(s, "2") == 0) {
+    s_platform_cfg.reinit(platform_cfg_t::MEMSIZE_2G);
+  } else if (strcmp(s, "4") == 0) {
+    s_platform_cfg.reinit(platform_cfg_t::MEMSIZE_4G);
+    memory_size_gib = 4;
+  } else if (strcmp(s, "8") == 0) {
+    s_platform_cfg.reinit(platform_cfg_t::MEMSIZE_8G);
+    memory_size_gib = 8;
+  } else {
+    printf("memsize args is wrong, set default memsize 2G\n");
+    s_platform_cfg.reinit(platform_cfg_t::MEMSIZE_2G);
+  }
+
+  options.cfg.mem_layout = {mem_cfg_t(reg_t(DRAM_BASE), reg_t(memory_size_gib) << 30)};
+  options.memory_option = true;
+}
+
 static std::vector<size_t> parse_hartids(const char* s)
 {
   std::string const str(s);
@@ -312,6 +335,7 @@ spike_boot_result_t::~spike_boot_result_t()
 
 spike_boot_options_t spike_parse_argv_options(int argc, char** argv)
 {
+  s_platform_cfg.reinit(platform_cfg_t::MEMSIZE_2G);
   spike_boot_options_t options;
 
   auto const device_parser = [&options](const char* s) {
@@ -428,6 +452,7 @@ spike_boot_options_t spike_parse_argv_options(int argc, char** argv)
   });
   parser.option(0, "compress", 0, [&](const char UNUSED *s){ options.checkpoint.snapshot_compress = true; });
   parser.option(0, "compress-zstd", 0, [&](const char UNUSED *s){ options.checkpoint.snapshot_compress_zstd = true; });
+  parser.option(0, "memsize", 1, [&](const char* s){ apply_memsize_option(options, s); });
 
   auto argv1 = parser.parse(argv);
   options.htif_args = std::vector<std::string>(argv1, (const char*const*)argv + argc);

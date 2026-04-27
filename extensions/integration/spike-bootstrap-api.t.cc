@@ -1,5 +1,6 @@
 #include "integration/spike_bootstrap.h"
 #include "checkpoint/checkpoint_restore_rom.h"
+#include "platform.h"
 #include "sim.h"
 #include <sys/wait.h>
 #include <unistd.h>
@@ -88,6 +89,31 @@ int main()
     if (waitpid(pid, &status, 0) < 0) return 31;
     if (!WIFEXITED(status)) return 32;
     if (WEXITSTATUS(status) == 0) return 33;
+  }
+
+  {
+    const char* argv_raw[] = {"spike", "--memsize=4", "pk", nullptr};
+    auto options = spike_parse_argv_options(
+        3,
+        const_cast<char**>(argv_raw));
+    if (options.cfg.mem_layout.size() != 1) return 34;
+    if (options.cfg.mem_layout.front().get_base() != 0x00020000ULL) return 35;
+    if (options.cfg.mem_layout.front().get_size() != (4ULL << 30)) return 36;
+    if (s_platform_cfg.rstvec != 0x100000000ULL) return 37;
+    if (s_platform_cfg.dram_base != 0x00020000ULL) return 38;
+    if (s_platform_cfg.ns16550_reg_io_width != 4) return 39;
+  }
+
+  {
+    const char* argv_raw[] = {"spike", "pk", nullptr};
+    auto options = spike_parse_argv_options(
+        2,
+        const_cast<char**>(argv_raw));
+    if (options.cfg.mem_layout.size() != 1) return 40;
+    if (options.cfg.mem_layout.front().get_base() != 0x80000000ULL) return 41;
+    if (options.cfg.mem_layout.front().get_size() != (2ULL << 30)) return 42;
+    if (s_platform_cfg.rstvec != 0x00001000ULL) return 43;
+    if (s_platform_cfg.dram_base != 0x80000000ULL) return 44;
   }
 
   return 0;
