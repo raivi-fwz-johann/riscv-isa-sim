@@ -9,6 +9,7 @@
 #include "platform.h"
 #include "runtime/spike_model_compat.h"
 #include "../VERSION"
+#include <fesvr/elfloader.h>
 #include <dlfcn.h>
 #include <fesvr/option_parser.h>
 #include <algorithm>
@@ -115,6 +116,26 @@ static std::ifstream::pos_type get_file_size(const char *filename)
 {
   std::ifstream in(filename, std::ios::ate | std::ios::binary);
   return in.tellg();
+}
+
+static void restore_checkpoint_elf_symbols(sim_t& sim, const std::string& elf_path)
+{
+  class nop_memif_t : public memif_t {
+  public:
+    explicit nop_memif_t(chunked_memif_t* cmemif) : memif_t(cmemif) {}
+    void read(addr_t UNUSED addr, size_t UNUSED len, void UNUSED* bytes) override {}
+    void write(addr_t UNUSED addr, size_t UNUSED len, const void UNUSED* src) override {}
+  } nop_memif(&sim);
+
+  reg_t entry = 0;
+  std::map<std::string, uint64_t> symbols = load_elf(elf_path.c_str(), &nop_memif, &entry, 0);
+  if (symbols.count("tohost") && symbols.count("fromhost")) {
+    sim.set_tohost_addr(symbols["tohost"]);
+    sim.set_fromhost_addr(symbols["fromhost"]);
+  } else {
+    std::cerr << "warning: tohost and fromhost symbols not in ELF; can't communicate with target"
+              << std::endl;
+  }
 }
 
 static void read_file_bytes(const char *filename, size_t fileoff,
@@ -458,8 +479,16 @@ spike_boot_options_t spike_parse_argv_options(int argc, char** argv)
   options.htif_args = std::vector<std::string>(argv1, (const char*const*)argv + argc);
 
   if (options.checkpoint.snapshot_load_name) {
-    if (!*argv1)
+    if (*argv1) {
+      options.checkpoint_symbol_elf = *argv1;
+      if (options.htif_args.empty()) {
+        options.htif_args.insert(options.htif_args.begin(), "none");
+      } else {
+        options.htif_args.front() = "none";
+      }
+    } else {
       options.htif_args.insert(options.htif_args.begin(), "none");
+    }
   } else if (!*argv1) {
     help();
   }
@@ -571,6 +600,10 @@ spike_boot_result_t spike_bootstrap(
     if (auto* compat = runtime->model_compat()) {
       compat->set_preserve_lr_sc_reservation_across_interleave(true);
     }
+  }
+
+  if (options.checkpoint.snapshot_load_name && options.checkpoint_symbol_elf.has_value()) {
+    restore_checkpoint_elf_symbols(*result.sim, *options.checkpoint_symbol_elf);
   }
 
   const bool has_elf = !options.htif_args.empty() && options.htif_args.front() != "none";

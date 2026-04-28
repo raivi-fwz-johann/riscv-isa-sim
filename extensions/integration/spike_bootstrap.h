@@ -28,6 +28,7 @@ struct spike_boot_options_t {
   bool memory_option = false;
   bool use_rbb = false;
   std::optional<std::string> explicit_isa;
+  std::optional<std::string> checkpoint_symbol_elf;
   const char* kernel = nullptr;
   const char* initrd = nullptr;
   const char* dtb_file = nullptr;

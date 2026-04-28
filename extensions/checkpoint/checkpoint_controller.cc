@@ -129,6 +129,7 @@ void save_regs(sim_t& sim, const checkpoint_paths_t& paths)
   state_t* state = proc->get_state();
   out << "# spike serialization file" << std::endl;
   out << "pc:0x" << std::hex << state->pc << std::endl;
+
   for (int i = 0; i < 32; ++i) {
     out << "reg_x" << std::dec << i << ":" << std::hex << state->XPR[i]
         << std::endl;
@@ -144,9 +145,102 @@ void save_regs(sim_t& sim, const checkpoint_paths_t& paths)
   }
 
   if (proc->extension_enabled('V')) {
-    out << "vl:" << std::hex << proc->VU.vl->read() << std::endl;
-    out << "vtype:" << std::hex << proc->VU.vtype->read() << std::endl;
-    out << "vlenb:" << std::hex << state->csrmap[CSR_VLENB]->read() << std::endl;
+    for (int r = 0; r < 32; ++r) {
+      const int vlen = static_cast<int>(proc->VU.get_vlen()) >> 3;
+      const int elen = static_cast<int>(proc->VU.get_elen()) >> 3;
+      const int num_elem = vlen / elen;
+
+      out << "reg_v" << std::dec << std::setw(2) << std::setfill('0') << r
+          << ":" << std::endl;
+      for (int e = num_elem - 1; e >= 0; --e) {
+        uint64_t val = 0;
+        switch (elen) {
+        case 8:
+          val = proc->VU.elt<uint64_t>(r, e);
+          out << std::dec << "[" << e << "]: 0x" << std::hex
+              << std::setfill('0') << std::setw(16) << val << "  ";
+          break;
+        case 4:
+          val = proc->VU.elt<uint32_t>(r, e);
+          out << std::dec << "[" << e << "]: 0x" << std::hex
+              << std::setfill('0') << std::setw(8)
+              << static_cast<uint32_t>(val) << "  ";
+          break;
+        case 2:
+          val = proc->VU.elt<uint16_t>(r, e);
+          out << std::dec << "[" << e << "]: 0x" << std::hex
+              << std::setfill('0') << std::setw(8)
+              << static_cast<uint16_t>(val) << "  ";
+          break;
+        case 1:
+          val = proc->VU.elt<uint8_t>(r, e);
+          out << std::dec << "[" << e << "]: 0x" << std::hex
+              << std::setfill('0') << std::setw(8)
+              << static_cast<int>(static_cast<uint8_t>(val)) << "  ";
+          break;
+        default:
+          std::cerr << "error: unsupported vector element width while saving checkpoint regs"
+                    << std::endl;
+          std::exit(-1);
+        }
+        out << std::endl;
+      }
+    }
+
+    out << "vstart:" << proc->VU.vstart->read() << std::endl;
+    out << "vxsat:" << proc->VU.vxsat->read() << std::endl;
+    out << "vxrm:" << proc->VU.vxrm->read() << std::endl;
+    out << "vcsr:" << state->csrmap[CSR_VCSR]->read() << std::endl;
+    out << "vl:" << proc->VU.vl->read() << std::endl;
+    out << "vtype:" << proc->VU.vtype->read() << std::endl;
+    out << "vlenb:" << state->csrmap[CSR_VLENB]->read() << std::endl;
+  }
+
+  const char* priv_str = "USHM";
+  out << "priv:" << priv_str[state->prv] << std::endl;
+
+  out << "mstatus:" << std::hex << state->mstatus->read() << std::endl;
+  out << "mtvec:" << std::hex << state->csrmap[CSR_MTVEC]->read() << std::endl;
+  out << "mscratch:" << std::hex << state->csrmap[CSR_MSCRATCH]->read()
+      << std::endl;
+  out << "mepc:" << std::hex << state->csrmap[CSR_MEPC]->read() << std::endl;
+  out << "mcause:" << std::hex << state->csrmap[CSR_MCAUSE]->read()
+      << std::endl;
+  out << "mtval:" << std::hex << state->csrmap[CSR_MTVAL]->read() << std::endl;
+
+  out << "misa:" << std::hex << state->misa->read() << std::endl;
+  out << "mie:" << std::hex << state->csrmap[CSR_MIE]->read() << std::endl;
+  out << "mip:" << std::hex << state->csrmap[CSR_MIP]->read() << std::endl;
+  out << "medeleg:" << std::hex << state->csrmap[CSR_MEDELEG]->read()
+      << std::endl;
+  out << "mideleg:" << std::hex << state->csrmap[CSR_MIDELEG]->read()
+      << std::endl;
+  out << "mcounteren:" << std::hex << state->csrmap[CSR_MCOUNTEREN]->read()
+      << std::endl;
+  out << "mcountinhibit:" << std::hex
+      << state->csrmap[CSR_MCOUNTINHIBIT]->read() << std::endl;
+  out << "tselect:" << std::hex << state->csrmap[CSR_TSELECT]->read()
+      << std::endl;
+
+  out << "stvec:" << std::hex << state->csrmap[CSR_STVEC]->read() << std::endl;
+  out << "sscratch:" << std::hex << state->csrmap[CSR_SSCRATCH]->read()
+      << std::endl;
+  out << "sepc:" << std::hex << state->csrmap[CSR_SEPC]->read() << std::endl;
+  out << "scause:" << std::hex << state->csrmap[CSR_SCAUSE]->read()
+      << std::endl;
+  out << "stval:" << std::hex << state->csrmap[CSR_STVAL]->read() << std::endl;
+  out << "satp:" << std::hex << state->csrmap[CSR_SATP]->read() << std::endl;
+  out << "scounteren:" << std::hex << state->csrmap[CSR_SCOUNTEREN]->read()
+      << std::endl;
+
+  for (int i = 0; i < 4; i += 2) {
+    out << "pmpcfg" << i << ":" << std::hex
+        << state->csrmap[CSR_PMPCFG0 + i]->read() << std::endl;
+  }
+
+  for (int i = 0; i < 16; ++i) {
+    out << "pmpaddr" << std::dec << i << ":" << std::hex
+        << state->csrmap[CSR_PMPADDR0 + i]->read() << std::endl;
   }
 }
 
