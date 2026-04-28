@@ -361,9 +361,6 @@ void mmu_t::load_slow_path(reg_t original_addr, std::size_t len,
   if (check_triggers_load)
     check_triggers(triggers::OPERATION_LOAD,
       transformed_addr, access_info.effective_virt, len, bytes);
-
-  if (unlikely(mem_log_active()))
-    proc->state.log_mem_read.push_back(std::make_tuple(original_addr, reg_from_bytes(len, bytes), len, log_paddr));
 }
 
 inline void mmu_t::perform_intrapage_store(reg_t vaddr, uintptr_t host_addr, reg_t paddr, reg_t len, const uint8_t* bytes, xlate_flags_t xlate_flags)
