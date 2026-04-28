@@ -2,6 +2,7 @@
 
 #include "checkpoint/checkpoint_files.h"
 #include "checkpoint/checkpoint_restore_rom.h"
+#include "platform.h"
 #include "sim.h"
 
 #include <cstdlib>
@@ -25,10 +26,9 @@ extern "C" int spike_checkpoint_save_mainram(
     sim_t* sim, reg_t mainram_base, const char* output_path)
     __attribute__((weak));
 
-reg_t mainram_base_for(const sim_t& sim)
+reg_t checkpoint_mainram_base()
 {
-  const auto& layout = sim.get_cfg().mem_layout;
-  return layout.empty() ? DRAM_BASE : layout.front().get_base();
+  return s_platform_cfg.checkpoint_mainram_base;
 }
 
 std::vector<char> read_binary_file(const fs::path& path)
@@ -97,7 +97,7 @@ void restore_mainram(sim_t& sim, const checkpoint_paths_t& paths, checkpoint_leg
 
   if (!data.empty()) {
     simif_t* simif = static_cast<simif_t*>(&sim);
-    if (!simif->mmio_store(mainram_base_for(sim), data.size(), data.data())) {
+    if (!simif->mmio_store(checkpoint_mainram_base(), data.size(), data.data())) {
       std::cerr << "error: failed to restore mainram into target memory"
                 << std::endl;
       std::exit(-1);
@@ -173,7 +173,7 @@ void save_bootram(sim_t& sim, const checkpoint_paths_t& paths)
 
 void save_mainram(sim_t& sim, const checkpoint_paths_t& paths, const checkpoint_legacy_config_t& config)
 {
-  const reg_t mainram_base = mainram_base_for(sim);
+  const reg_t mainram_base = checkpoint_mainram_base();
   if (!spike_checkpoint_save_mainram) {
     std::cerr << "error: checkpoint mainram saver bridge is unavailable"
               << std::endl;

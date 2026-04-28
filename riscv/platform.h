@@ -32,6 +32,7 @@ struct platform_cfg_t {
         ns16550_interrupt_id = 1;
         ext_io_base = 0x40000000;
         dram_base = 0x80000000;
+        checkpoint_mainram_base = 0x80000000;
         break;
 
       case MEMSIZE_4G:
@@ -49,6 +50,7 @@ struct platform_cfg_t {
         ns16550_interrupt_id = 1;
         ext_io_base = 0x140000000;
         dram_base = 0x00020000;
+        checkpoint_mainram_base = 0x00020000;
         break;
 
       case MEMSIZE_8G:
@@ -67,6 +69,7 @@ struct platform_cfg_t {
         ns16550_interrupt_id = 1;
         ext_io_base = 0x40000000;
         dram_base = 0x4000000000;
+        checkpoint_mainram_base = 0x4000000000;
         break;
     }
   }
@@ -85,6 +88,7 @@ struct platform_cfg_t {
   uint64_t ns16550_interrupt_id;
   uint64_t ext_io_base;
   uint64_t dram_base;
+  uint64_t checkpoint_mainram_base;
 };
 
 inline platform_cfg_t s_platform_cfg = platform_cfg_t();
