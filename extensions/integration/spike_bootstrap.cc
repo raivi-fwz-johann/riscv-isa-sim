@@ -296,23 +296,16 @@ static unsigned long atoul_nonzero_safe(const char* s)
 
 static void apply_memsize_option(spike_boot_options_t& options, const char* s)
 {
-  size_t memory_size_gib = 2;
-
   if (strcmp(s, "2") == 0) {
     s_platform_cfg.reinit(platform_cfg_t::MEMSIZE_2G);
   } else if (strcmp(s, "4") == 0) {
     s_platform_cfg.reinit(platform_cfg_t::MEMSIZE_4G);
-    memory_size_gib = 4;
   } else if (strcmp(s, "8") == 0) {
     s_platform_cfg.reinit(platform_cfg_t::MEMSIZE_8G);
-    memory_size_gib = 8;
   } else {
     printf("memsize args is wrong, set default memsize 2G\n");
     s_platform_cfg.reinit(platform_cfg_t::MEMSIZE_2G);
   }
-
-  options.cfg.mem_layout = {mem_cfg_t(reg_t(DRAM_BASE), reg_t(memory_size_gib) << 30)};
-  options.memory_option = true;
 }
 
 static std::vector<size_t> parse_hartids(const char* s)

@@ -337,10 +337,7 @@ void prepare_restore_harts(sim_t& sim)
     }
     state_t* state = proc->get_state();
     state->debug_mode = true;
-    state->prv = PRV_M;
-    state->prev_prv = PRV_M;
-    state->v = false;
-    state->prev_v = false;
+    proc->set_privilege(PRV_M, false);
   }
 }
 

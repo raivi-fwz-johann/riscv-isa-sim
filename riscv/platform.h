@@ -110,7 +110,7 @@ inline platform_cfg_t s_platform_cfg = platform_cfg_t();
 #define NS16550_INTERRUPT_ID s_platform_cfg.ns16550_interrupt_id
 #define EXT_IO_BASE        s_platform_cfg.ext_io_base
 #define DRAM_BASE          s_platform_cfg.dram_base
-#define DEBUG_START        0x0
-#define DEBUG_SIZE         0x1000
+#define DEBUG_START        0x118100000
+#define DEBUG_SIZE         0x4000
 
 #endif

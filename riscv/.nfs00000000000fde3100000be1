@@ -1,6 +1,7 @@
 #include "devices.h"
 #include "mmu.h"
 #include <stdexcept>
+#include <typeinfo>
 
 mmio_device_map_t& mmio_device_map()
 {
@@ -22,7 +23,6 @@ bus_t::bus_t(abstract_device_t* fallback)
 
 void bus_t::add_device(reg_t addr, abstract_device_t* dev)
 {
-  /* raivi beg
   // Allow empty devices by omitting them
   auto size = dev->size();
   if (size == 0)
@@ -30,8 +30,11 @@ void bus_t::add_device(reg_t addr, abstract_device_t* dev)
 
   // Reject devices that overflow address size
   if (addr + size - 1 < addr) {
-    fprintf(stderr, "device at [%" PRIx64 ", %" PRIx64 ") overflows address size\n",
-            addr, addr + size);
+    fprintf(stderr,
+            "device %s at [%" PRIx64 ", %" PRIx64 ") overflows address size\n",
+            typeid(*dev).name(),
+            addr,
+            addr + size);
     abort();
   }
 
@@ -39,11 +42,19 @@ void bus_t::add_device(reg_t addr, abstract_device_t* dev)
   if (auto it = devices.upper_bound(addr);
       (it != devices.end() && addr + size - 1 >= it->first) ||
       (it != devices.begin() && (it--, it->first + it->second->size() - 1 >= addr))) {
-    fprintf(stderr, "devices at [%" PRIx64 ", %" PRIx64 ") and [%" PRIx64 ", %" PRIx64 ") overlap\n",
-            it->first, it->first + it->second->size(), addr, addr + size);
+    fprintf(stderr,
+            "device overlap detected:\n"
+            "  new     %s at [%" PRIx64 ", %" PRIx64 ")\n"
+            "  existing %s at [%" PRIx64 ", %" PRIx64 ")\n",
+            typeid(*dev).name(),
+            addr,
+            addr + size,
+            typeid(*it->second).name(),
+            it->first,
+            it->first + it->second->size());
     abort();
   }
-  raivi end*/
+
   devices[addr] = dev;
 }
 
