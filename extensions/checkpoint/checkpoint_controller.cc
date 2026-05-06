@@ -306,24 +306,19 @@ void install_checkpoint_bootrom(sim_t& sim, const checkpoint_paths_t& paths)
       &sim, kCheckpointBootromBase, bytes.data(), bytes.size());
 }
 
-void install_trampoline(sim_t& sim)
+void activate_checkpoint_restore_entry(sim_t& sim)
 {
-  auto* proc = sim.get_core(0);
-  if (!proc) {
-    std::cerr << "error: core0 is unavailable while installing checkpoint trampoline"
-              << std::endl;
-    std::exit(-1);
+  for (const auto& [hartid, proc] : sim.get_harts()) {
+    if (!proc) {
+      std::cerr << "error: null hart during checkpoint restore activation"
+                << std::endl;
+      std::exit(-1);
+    }
+    state_t* state = proc->get_state();
+    state->debug_mode = true;
+    state->pc = kCheckpointBootromBase;
+    state->XPR.write(X_A0, hartid);
   }
-
-  auto bytes = build_checkpoint_trampoline_rom(
-      proc->get_isa().get_max_xlen(),
-      kCheckpointBootromBase);
-  if (!spike_checkpoint_install_rom) {
-    std::cerr << "error: checkpoint ROM installation bridge is unavailable"
-              << std::endl;
-    std::exit(-1);
-  }
-  spike_checkpoint_install_rom(&sim, DEFAULT_RSTVEC, bytes.data(), bytes.size());
 }
 
 void prepare_restore_harts(sim_t& sim)
@@ -383,8 +378,8 @@ public:
 
     restore_htif(sim, paths);
     restore_mode_ = checkpoint_restore_mode_t::self_contained_none;
-    install_trampoline(sim);
     restore_mainram(sim, paths, config_);
+    activate_checkpoint_restore_entry(sim);
   }
 
   void on_post_reset(sim_t& sim) override
@@ -399,11 +394,13 @@ public:
     if (!pending_ram_overlay_ &&
         !pending_htif_restore_ &&
         restore_mode_ != checkpoint_restore_mode_t::elf_bootstrap_then_ram_overlay) {
+      activate_checkpoint_restore_entry(sim);
       pending_post_reset_restore_ = false;
       return;
     }
 
     if (restore_mode_ != checkpoint_restore_mode_t::elf_bootstrap_then_ram_overlay) {
+      activate_checkpoint_restore_entry(sim);
       pending_post_reset_restore_ = false;
       return;
     }
@@ -418,6 +415,7 @@ public:
       pending_htif_restore_ = false;
     }
 
+    activate_checkpoint_restore_entry(sim);
     pending_post_reset_restore_ = false;
   }
 
