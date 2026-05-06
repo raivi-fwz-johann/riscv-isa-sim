@@ -91,5 +91,6 @@ public:
    * @brief For command extension.
    * @return 0 means success, others mean fail
    */
+  virtual void setCycle(uint64_t value, uint32_t CId = 0) {}
   virtual int command(const std::string &cmd) { return 0; }
 };

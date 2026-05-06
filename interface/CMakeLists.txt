@@ -99,6 +99,8 @@ if(SPIKE_STATIC_ENV_LIB)
   target_link_options(spikeInterface_V2 PRIVATE -static-libstdc++)
 endif()
 
+add_subdirectory(test)
+
 add_executable(SpikeSimObjTest
   src/SpikeSimObjTest.cc
 )
