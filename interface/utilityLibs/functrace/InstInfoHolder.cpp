@@ -64,6 +64,35 @@ void InstInfoHolder::freeInst(uint64_t IId) {
     throw std::runtime_error("Only support free inst in order, current id to free: " + std::to_string(IId) +
                              ", expected id to free: " + std::to_string(m_Insts.front().getId()));
   }
+  {
+    const auto &inst = m_Insts.front();
+    auto trap = inst.GetTrapInfo();
+    std::cout << "modelDebug holderFreeInst"
+              << " free_id=0x" << std::hex << IId
+              << " size=" << std::dec << m_Insts.size()
+              << " in_dummy=" << static_cast<int>(m_InDummyHead)
+              << " is_curr=" << static_cast<int>(IId == m_CurrInst->getId())
+              << " id=0x" << std::hex << inst.getId()
+              << " correct=" << static_cast<int>(inst.isCorrect())
+              << " first_miss=" << static_cast<int>(inst.isFirstMiss())
+              << " rvc=" << static_cast<int>(inst.isRvc())
+              << " load=" << static_cast<int>(inst.isLoad())
+              << " store=" << static_cast<int>(inst.isStore())
+              << " pc=0x" << inst.getPc()
+              << " pc_paddr=0x" << inst.getPcPAddr()
+              << " pc_paddr2=0x" << inst.getPcPAddr2()
+              << " npc=0x" << inst.getNPc()
+              << " bits=0x" << inst.getBits()
+              << " inst_len=" << std::dec << inst.getInstLen()
+              << " in_trap=" << static_cast<int>(inst.inTrap())
+              << " in_wfi=" << static_cast<int>(inst.inWFI())
+              << " trap_cause=0x" << std::hex << trap.cause
+              << " trap_tval=0x" << trap.tval
+              << " trap_tval2=0x" << trap.tval2
+              << " trap_has_tval2=" << static_cast<int>(trap.has_tval2)
+              << " perfect=" << static_cast<int>(inst.perfect())
+              << std::endl;
+  }
   if (IId == m_CurrInst->getId()) {
     /* This means that after resolve to IId, inst IId is commited, so we are in dummy head now. */
     m_InDummyHead = true;
