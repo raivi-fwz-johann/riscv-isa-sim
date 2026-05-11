@@ -335,3 +335,4 @@ uint64_t &SpikeSimObjSync::missIdCursor(uint32_t CId) {
 uint64_t SpikeSimObjSync::backendCurrPc(uint32_t CId) const {
   return m_SimImpl->getCurrPc(CId);
 }
+

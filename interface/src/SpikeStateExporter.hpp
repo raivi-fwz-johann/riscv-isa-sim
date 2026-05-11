@@ -25,7 +25,17 @@ struct spike_observed_insn_t {
 };
 
 struct spike_state_snapshot_t {
-  spike_observed_insn_t observed;
+  spike_observed_insn_t fetch;     // written by observe_fetch only
+  spike_observed_insn_t exec;      // written by observe_exec only
+  spike_observed_insn_t pre_exec;  // written by observe_pre_exec only (before fetch.func)
+  spike_observed_insn_t stale_fetch; // saved before fetchInstOnly overwrites fetch
+  bool in_trap{false};             // written by observe_trap
+  bool has_tval2{false};
+  uint64_t epc{ERROR_PC_ADDR};     // trap pc, written by observe_trap
+  uint64_t trap_npc{ERROR_PC_ADDR};// trap npc, written by observe_trap_target
+  uint64_t cause{0};
+  uint64_t tval{0};
+  uint64_t tval2{0};
   MmuTrace mmu_trace{};
 };
 
@@ -34,12 +44,15 @@ public:
   void reset(size_t nprocs);
 
   void observe_exec(size_t hart_id, insn_fetch_t* in, reg_t pc, reg_t npc);
+  void observe_pre_exec(size_t hart_id, insn_fetch_t* in, reg_t pc);
   reg_t observe_trap(size_t hart_id, void* in, reg_t pc, trap_t& t);
   void observe_trap_target(size_t hart_id, reg_t npc);
   void observe_mmu_walk(const spike_mmu_walk_observe_t& event);
+  void observe_fetch(size_t hart_id, reg_t vaddr, reg_t paddr, reg_t paddr2, insn_bits_t bits, unsigned length);
 
   void set_mmu_paddr(size_t hart_id, uint64_t paddr);
   const spike_state_snapshot_t* snapshot(size_t hart_id) const;
+  void save_stale_fetch(size_t hart_id);
   MmuTrace get_mmu_trace(size_t hart_id) const;
   bool in_trap(size_t hart_id) const;
   void reset_observed(size_t hart_id);

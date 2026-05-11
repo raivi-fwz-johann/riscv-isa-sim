@@ -46,6 +46,7 @@ struct insn_fetch_t
   insn_func_t func;
   insn_t insn;
   reg_t pc_ppn = 0;
+  reg_t pc_ppn2 = 0;
 };
 
 struct icache_entry_t {
@@ -374,7 +375,7 @@ public:
   {
     spike_forget_fetch_paddr(this);
     insn_bits_t insn = fetch_insn_parcel(addr);
-    auto paddr_to_record = spike_fetch_paddr(this, addr);
+    auto paddr_to_record = curr_fetch_paddr ? curr_fetch_paddr : spike_fetch_paddr(this, addr);
     unsigned length = insn_length(insn);
 
     for (unsigned pos = sizeof(insn_parcel_t); pos < length; pos += sizeof(insn_parcel_t)) {
@@ -386,9 +387,10 @@ public:
     entry->tag = addr;
     entry->next = &icache[icache_index(addr + length)];
     entry->data = fetch;
+    entry->data.pc_ppn = paddr_to_record;
+    entry->data.pc_ppn2 = curr_fetch_paddr;
 
     auto [check_tracer, _, paddr] = access_tlb(tlb_insn, addr, TLB_FLAGS, TLB_CHECK_TRACER);
-    entry->data.pc_ppn = paddr_to_record;
     if (unlikely(check_tracer)) {
       if (tracer.interested_in_range(paddr, paddr + 1, FETCH)) {
         entry->tag = -1;
@@ -396,6 +398,8 @@ public:
       }
     }
     MMU_OBSERVE_FETCH(addr, insn, length);
+    if (auto* hook = hook_dispatcher())
+      hook->on_fetch_observe(proc->get_id(), addr, entry->data.pc_ppn, entry->data.pc_ppn2, insn, length);
     return entry;
   }
 
@@ -438,6 +442,7 @@ public:
     auto host_addr = mmio ? 0 : entry.data.host_addr + pgoff;
     auto paddr = entry.data.target_addr + pgoff;
     if (hit && tlb == tlb_insn) {
+      curr_fetch_paddr = paddr;
       spike_note_fetch_paddr(this, paddr);
     }
     return std::make_tuple(hit, host_addr, paddr);
@@ -507,6 +512,7 @@ private:
   memtracer_list_t tracer;
   reg_t load_reservation_address;
   reg_t blocksz;
+  uint64_t curr_fetch_paddr{0};
 
   // implement an instruction cache for simulator performance
   icache_entry_t icache[ICACHE_ENTRIES];

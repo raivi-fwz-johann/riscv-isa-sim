@@ -42,8 +42,10 @@ public:
   virtual void on_pre_csr(int, reg_t, std::shared_ptr<bool>) {}
   virtual bool on_exit(int) { return true; }
   virtual void on_exec_observe(uint32_t, insn_fetch_t*, reg_t, reg_t) {}
+  virtual void on_pre_exec(uint32_t, insn_fetch_t*, reg_t) {}
   virtual void on_trap_target(uint32_t, reg_t, reg_t) {}
   virtual void on_fake_step(size_t, size_t) {}
   virtual void on_device_uart_tx(abstract_device_t*, uint8_t) {}
   virtual void on_mmu_walk(const spike_mmu_walk_observe_t&) {}
+  virtual void on_fetch_observe(uint32_t, reg_t, reg_t, reg_t, insn_bits_t, unsigned) {}
 };

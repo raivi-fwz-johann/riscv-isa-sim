@@ -15,15 +15,15 @@ int main()
 
   exporter.observe_exec(1, &fetch, 0x1000, 0x1004);
   auto* exec_snapshot = exporter.snapshot(1);
-  if (!exec_snapshot || !exec_snapshot->observed.valid)
+  if (!exec_snapshot || !exec_snapshot->exec.valid)
     return 1;
-  if (exec_snapshot->observed.pc != 0x1000)
+  if (exec_snapshot->exec.pc != 0x1000)
     return 2;
-  if (exec_snapshot->observed.npc != 0x1004)
+  if (exec_snapshot->exec.npc != 0x1004)
     return 3;
-  if (exec_snapshot->observed.bits != 0x00000013)
+  if (exec_snapshot->exec.bits != 0x00000013)
     return 4;
-  if (exec_snapshot->observed.paddr != 0x2000)
+  if (exec_snapshot->exec.paddr != 0x2000)
     return 5;
   if (exec_snapshot->mmu_trace.paddr != 0x2000)
     return 6;
@@ -32,18 +32,18 @@ int main()
   exec_snapshot = exporter.snapshot(1);
   if (!exec_snapshot)
     return 24;
-  if (exec_snapshot->observed.pc != 0x1004)
+  if (exec_snapshot->exec.pc != 0x1004)
     return 25;
-  if (exec_snapshot->observed.npc != ERROR_PC_ADDR)
+  if (exec_snapshot->exec.npc != ERROR_PC_ADDR)
     return 26;
 
   exporter.observe_exec(1, &fetch, 0x1008, PC_SERIALIZE_BEFORE);
   exec_snapshot = exporter.snapshot(1);
   if (!exec_snapshot)
     return 27;
-  if (exec_snapshot->observed.pc != 0x1008)
+  if (exec_snapshot->exec.pc != 0x1008)
     return 28;
-  if (exec_snapshot->observed.npc != ERROR_PC_ADDR)
+  if (exec_snapshot->exec.npc != ERROR_PC_ADDR)
     return 29;
 
   spike_mmu_walk_observe_t pending_walk{};
@@ -89,13 +89,13 @@ int main()
     return 14;
 
   auto* trap_snapshot = exporter.snapshot(1);
-  if (!trap_snapshot || !trap_snapshot->observed.in_trap)
+  if (!trap_snapshot || !trap_snapshot->in_trap)
     return 15;
-  if (trap_snapshot->observed.cause != CAUSE_LOAD_PAGE_FAULT)
+  if (trap_snapshot->cause != CAUSE_LOAD_PAGE_FAULT)
     return 16;
-  if (trap_snapshot->observed.tval != 0x44 || trap_snapshot->observed.tval2 != 0x55)
+  if (trap_snapshot->tval != 0x44 || trap_snapshot->tval2 != 0x55)
     return 17;
-  if (!trap_snapshot->observed.has_tval2)
+  if (!trap_snapshot->has_tval2)
     return 18;
 
   auto trap_trace = exporter.get_mmu_trace(1);
@@ -106,7 +106,7 @@ int main()
 
   exporter.reset_observed(1);
   auto* cleared_snapshot = exporter.snapshot(1);
-  if (!cleared_snapshot || cleared_snapshot->observed.valid)
+  if (!cleared_snapshot || cleared_snapshot->exec.valid)
     return 21;
 
   auto preserved_trace = exporter.get_mmu_trace(1);

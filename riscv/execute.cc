@@ -247,6 +247,10 @@ static inline reg_t execute_insn_fast(processor_t* p, reg_t pc, insn_fetch_t fet
     commit_log_stash_privilege(p);
   }
 
+  if (auto* hook = get_hook_dispatcher(p)) {
+      hook->on_pre_exec(p->get_id(), &fetch, pc);
+  }
+
   reg_t npc = fetch.func(p, fetch.insn, pc);
 
   if (auto* hook = get_hook_dispatcher(p)) {
@@ -270,6 +274,9 @@ static inline reg_t execute_insn_logged(processor_t* p, reg_t pc, insn_fetch_t f
   reg_t npc;
 
   try {
+    if (auto* hook = get_hook_dispatcher(p)) {
+      hook->on_pre_exec(p->get_id(), &fetch, pc);
+    }
     npc = fetch.func(p, fetch.insn, pc);
     if (auto* hook = get_hook_dispatcher(p)) {
       hook->on_exec_observe(p->get_id(), &fetch, pc, npc);

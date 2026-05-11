@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <sstream>
+#include <iostream>
 
 #include "spike_init.h"
 #include "SpikeRoiState.hpp"
@@ -236,27 +237,62 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
   if (!snapshot) {
     return -1;
   }
-  auto observed = snapshot->observed;
-  if (!observed.valid) {
+  if (!snapshot->in_trap && !snapshot->exec.valid) {
     return -1;
   }
 
-  data.m_InTrap = observed.in_trap;
+  const bool in_trap = snapshot->in_trap;
+  data.m_InTrap = in_trap;
   data.m_InWFI = inWFI(CId);
   data.cause_ = 0;
   data.tval_ = 0;
   data.has_tval2_ = false;
   data.tval2_ = 0;
 
-  data.m_Pc = observed.pc;
-  data.m_Bits = observed.bits;
-  data.m_PPN = observed.paddr;
-  data.m_PPN2 = observed.paddr2;
-  data.m_NPc = observed.npc;
+  if (in_trap) {
+    data.m_Pc = snapshot->epc;
+    data.m_NPc = snapshot->trap_npc;
+  } else {
+    data.m_Pc = snapshot->exec.pc;
+    data.m_NPc = snapshot->exec.npc;
+  }
   if (data.m_NPc == ERROR_PC_ADDR) {
     data.m_NPc = p->get_state()->pc;
   }
-  if (!observed.in_trap && data.m_Bits != 0) {
+
+  /* paddr: for trap use stale_fetch (pre-getNextInst-overwrite), else fetch > exec. */
+  if (in_trap && snapshot->stale_fetch.valid) {
+    data.m_PPN = snapshot->stale_fetch.paddr;
+    data.m_PPN2 = snapshot->stale_fetch.paddr2;
+  } else if (snapshot->fetch.valid) {
+    data.m_PPN = snapshot->fetch.paddr;
+    data.m_PPN2 = snapshot->fetch.paddr2;
+  } else {
+    data.m_PPN = snapshot->exec.paddr;
+    data.m_PPN2 = snapshot->exec.paddr2;
+  }
+  if (data.m_PPN2 == ERROR_PC_ADDR || data.m_PPN2 == 0) {
+    data.m_PPN2 = data.m_PPN;
+  }
+
+  /* bits: pre_exec (pc match) > stale_fetch (trap) > fetch > exec. */
+  if (in_trap && snapshot->pre_exec.valid &&
+      snapshot->pre_exec.pc == snapshot->epc) {
+    data.m_Bits = snapshot->pre_exec.bits;
+  } else if (in_trap && snapshot->stale_fetch.valid) {
+    data.m_Bits = snapshot->stale_fetch.bits;
+  } else if (in_trap && snapshot->fetch.valid) {
+    data.m_Bits = snapshot->fetch.bits;
+  } else if (snapshot->exec.valid) {
+    data.m_Bits = snapshot->exec.bits;
+  } else if (snapshot->fetch.valid) {
+    data.m_Bits = snapshot->fetch.bits;
+  }
+  if (in_trap && data.m_Bits == 0) {
+    data.m_Bits = (data.m_NPc - data.m_Pc == 4) ? 0x13 : 0x1;
+  }
+
+  if (!in_trap && data.m_Bits != 0) {
     const auto inst_len = static_cast<uint64_t>(insn_t(data.m_Bits).length());
     const auto page0 = std::min<uint64_t>(inst_len, PGSIZE - (data.m_Pc % PGSIZE));
     if (page0 != inst_len) {
@@ -267,18 +303,18 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
       }
     }
   }
-  if (observed.in_trap) {
-    data.cause_ = observed.cause;
-    data.tval_ = observed.tval;
-    data.has_tval2_ = observed.has_tval2;
-    data.tval2_ = observed.tval2;
+  if (in_trap) {
+    data.cause_ = snapshot->cause;
+    data.tval_ = snapshot->tval;
+    data.has_tval2_ = snapshot->has_tval2;
+    data.tval2_ = snapshot->tval2;
   }
   data.m_mmuTrace = m_StateExporter->get_mmu_trace(CId);
-  if (data.m_mmuTrace.paddr == 0 && observed.paddr != ERROR_PC_ADDR) {
-    data.m_mmuTrace.paddr = observed.paddr;
+  if (data.m_mmuTrace.paddr == 0 && snapshot->fetch.paddr != ERROR_PC_ADDR) {
+    data.m_mmuTrace.paddr = snapshot->fetch.paddr;
   }
-  if (observed.in_trap && data.m_mmuTrace.excp_cause == 0) {
-    data.m_mmuTrace.excp_cause = observed.cause;
+  if (in_trap && data.m_mmuTrace.excp_cause == 0) {
+    data.m_mmuTrace.excp_cause = snapshot->cause;
   }
   data.m_FetchPtw.clear();
   auto walked_fetch_ptw = build_ptw(m_Simulator.get(), p, data.m_Pc);
@@ -308,10 +344,10 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
   }
   data.m_MemOps.clear();
   data.m_BranchTaken =
-      !observed.in_trap &&
+      !in_trap &&
       data.m_NPc != ERROR_PC_ADDR &&
       data.m_NPc != data.m_Pc + static_cast<uint64_t>(insn_t(data.m_Bits).length());
-  data.m_Exception = observed.in_trap ? static_cast<uint32_t>(observed.cause) : 0;
+  data.m_Exception = in_trap ? static_cast<uint32_t>(snapshot->cause) : 0;
 
 #if defined (FULL_TRACE) || defined (MEM_TRACE)
   // parse log_mem_read
@@ -441,7 +477,7 @@ InstTrace RawSpike::fetchInstOnly(uint64_t Pc, uint32_t CId, uint64_t IId) {
   InstTrace res(IId, Pc);
   try {
     auto insn = m_Simulator->get_core(CId)->get_mmu()->ext_fetch_insn(Pc);
-    res = InstTrace(IId, Pc, insn.insn.bits(), insn.pc_ppn);
+  res = InstTrace(IId, Pc, insn.insn.bits(), insn.pc_ppn);
   } catch (...) {
   }
   log_fetch_inst_trace(res);

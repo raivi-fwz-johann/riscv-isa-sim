@@ -3,8 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
-#include <iomanip>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -27,6 +27,73 @@ std::string format_hex(uint64_t value) {
   std::ostringstream oss;
   oss << "0x" << std::hex << value;
   return oss.str();
+}
+
+void dump_xlate_flags(std::ostream &os, const XlateFlags &flags) {
+  os << "{forced_virt=" << static_cast<int>(flags.forced_virt)
+     << ",hlvx=" << static_cast<int>(flags.hlvx)
+     << ",lr=" << static_cast<int>(flags.lr)
+     << ",ss_access=" << static_cast<int>(flags.ss_access)
+     << ",clean_inval=" << static_cast<int>(flags.clean_inval)
+     << ",special_access=" << static_cast<int>(flags.is_special_access())
+     << "}";
+}
+
+void dump_mmu_trace(std::ostream &os, const MmuTrace &trace) {
+  os << "{paddr=" << format_hex(trace.paddr) << ",pte_paddr=[";
+  for (size_t i = 0; i < 5; ++i) {
+    if (i != 0) {
+      os << ",";
+    }
+    os << format_hex(trace.pte_paddr[i]);
+  }
+  os << "],levels=" << std::dec << static_cast<int>(trace.levels)
+     << ",xf_log=";
+  dump_xlate_flags(os, trace.xf_log);
+  os << "}";
+}
+
+void dump_trap_info(std::ostream &os, const TrapInfo &info) {
+  os << "{cause=" << format_hex(info.cause)
+     << ",tval=" << format_hex(info.tval)
+     << ",tval2=" << format_hex(info.tval2)
+     << ",in_trap=" << static_cast<int>(info.in_trap)
+     << ",has_tval2=" << static_cast<int>(info.has_tval2)
+     << "}";
+}
+
+std::string format_inst_trace(const InstTrace &inst) {
+  std::ostringstream os;
+  os << "{id=" << std::dec << inst.getId()
+     << ",correct=" << static_cast<int>(inst.isCorrect())
+     << ",first_miss=" << static_cast<int>(inst.isFirstMiss())
+     << ",rvc=" << static_cast<int>(inst.isRvc())
+     << ",load=" << static_cast<int>(inst.isLoad())
+     << ",store=" << static_cast<int>(inst.isStore())
+     << ",pc=" << format_hex(inst.getPc())
+     << ",pc_paddr=" << format_hex(inst.getPcPAddr())
+     << ",pc_paddr2=" << format_hex(inst.getPcPAddr2())
+     << ",npc=" << format_hex(inst.getNPc())
+     << ",bits=" << format_hex(inst.getBits())
+     << ",inst_len=" << std::dec << inst.getInstLen()
+     << ",in_trap=" << static_cast<int>(inst.inTrap())
+     << ",in_wfi=" << static_cast<int>(inst.inWFI())
+     << ",trap_info=";
+  dump_trap_info(os, inst.GetTrapInfo());
+  os << ",mmu_trace=";
+  dump_mmu_trace(os, inst.m_mmuTrace);
+  os << ",perfect=" << static_cast<int>(inst.perfect()) << "}";
+  return os.str();
+}
+
+std::string format_step_trace(size_t step_count, bool is_done, uint64_t curr_pc,
+                              const InstTrace &inst) {
+  std::ostringstream os;
+  os << "step=" << std::dec << step_count
+     << " done=" << static_cast<int>(is_done)
+     << " curr_pc=" << format_hex(curr_pc)
+     << " inst=" << format_inst_trace(inst);
+  return os.str();
 }
 
 bool starts_with(const std::string &value, const std::string &prefix) {
@@ -96,13 +163,8 @@ void print_usage(const char *prog) {
 
 void print_step_trace(size_t step_count, bool is_done, uint64_t curr_pc,
                       const InstTrace &inst) {
-  std::cout << "step=" << step_count
-            << " done=" << static_cast<int>(is_done)
-            << " curr_pc=" << format_hex(curr_pc)
-            << " inst_pc=" << format_hex(inst.getPc())
-            << " inst_npc=" << format_hex(inst.getNPc())
-            << " bits=" << format_hex(inst.getBits())
-            << " perfect=" << static_cast<int>(inst.perfect()) << std::endl;
+  std::cout << format_step_trace(step_count, is_done, curr_pc, inst)
+            << std::endl;
 }
 
 int run(int argc, char **argv) {

@@ -121,6 +121,7 @@ inline mmu_t::insn_parcel_t mmu_t::perform_intrapage_fetch(reg_t vaddr, uintptr_
   else if (!mmio_fetch(paddr, sizeof(res), (uint8_t*)&res))
     throw trap_instruction_access_fault(proc->state.v, vaddr, 0, 0);
 
+  curr_fetch_paddr = paddr;
   spike_note_fetch_paddr(this, paddr);
 
   return res;
