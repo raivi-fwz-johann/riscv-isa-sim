@@ -533,6 +533,7 @@ void RawSpike::setLogCommits(bool LogCommits, bool IsFast, [[maybe_unused]]uint3
   if (auto* runtime = m_Simulator->runtime_context()) {
     if (auto* manager = runtime->log_manager()) {
       manager->set_enable_fast_commit_log(IsFast);
+      manager->set_enable_fast_mem_log(IsFast);
     }
   }
 }

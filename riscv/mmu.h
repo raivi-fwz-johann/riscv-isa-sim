@@ -344,6 +344,13 @@ public:
   template<typename T>
   bool store_conditional(reg_t addr, T val)
   {
+    if (unlikely(mem_log_active())) {
+      proc->state.log_mem_write.push_back(std::make_tuple(addr, reg_t(val), uint8_t(sizeof(T)), addr));
+      auto access_info = generate_access_info(addr, STORE, {});
+      access_info.readonly = true;
+      reg_t paddr = translate(access_info, sizeof(T));
+      std::get<3>(proc->state.log_mem_write.back()) = paddr;
+    }
     bool have_reservation = check_load_reservation(addr, sizeof(T));
 
     if (have_reservation)
