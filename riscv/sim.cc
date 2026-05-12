@@ -368,7 +368,10 @@ size_t sim_t::idle_ext(size_t n, size_t proc)
     return 0;
 
   current_proc = proc;
-  step(n);
+  if (debug || ctrlc_pressed)
+    interactive();
+  else
+    step(n);
   return n;
 }
 
