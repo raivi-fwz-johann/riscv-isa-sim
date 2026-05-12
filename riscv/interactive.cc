@@ -432,6 +432,10 @@ void sim_t::interactive_run(const std::string& cmd, const std::vector<std::strin
 
 void sim_t::interactive_quit(const std::string& cmd, const std::vector<std::string>& args)
 {
+  auto* hook = runtime_context() ? runtime_context()->hook_dispatcher() : nullptr;
+  if (hook && !hook->on_exit(0)) {
+    return;
+  }
   exit(0);
 }
 
