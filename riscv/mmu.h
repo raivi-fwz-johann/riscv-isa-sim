@@ -427,7 +427,12 @@ public:
 
   inline insn_fetch_t ext_fetch_insn(reg_t addr)
   {
-    return load_insn(addr);
+    auto *icache = access_icache(addr);
+    if (icache) {
+      return icache->data;
+    }
+    throw std::runtime_error("ext_fetch_insn error");
+    return insn_fetch_t();
   }
 
   inline uint64_t vaddr2paddr(uint64_t vaddr)
