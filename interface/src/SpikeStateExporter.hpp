@@ -52,7 +52,6 @@ public:
 
   void set_mmu_paddr(size_t hart_id, uint64_t paddr);
   const spike_state_snapshot_t* snapshot(size_t hart_id) const;
-  void save_stale_fetch(size_t hart_id);
   MmuTrace get_mmu_trace(size_t hart_id) const;
   bool in_trap(size_t hart_id) const;
   void reset_observed(size_t hart_id);

@@ -4,42 +4,6 @@
 #include "mmu.h"
 #include "trap.h"
 
-#include <cstdlib>
-#include <iostream>
-
-namespace {
-
-bool snapshot_debug_enabled()
-{
-  return std::getenv("MODEL_STATE_SNAPSHOT_DEBUG") != nullptr;
-}
-
-void log_snapshot_observe_exec_debug(
-    size_t hart_id,
-    const spike_observed_insn_t& observed,
-    bool had_pending_mmu_trace,
-    uint64_t backend_pc)
-{
-  if (!snapshot_debug_enabled()) {
-    return;
-  }
-  std::cout << "modelDebug snapshotObserveExecState"
-            << " core=" << hart_id
-            << " had_pending_mmu=" << had_pending_mmu_trace
-            << std::hex
-            << " observed_pc=0x" << observed.pc
-            << " observed_npc=0x" << observed.npc
-            << " backend_pc=0x" << backend_pc
-            << " bits=0x" << observed.bits
-            << " paddr=0x" << observed.paddr
-            << std::dec
-            << " valid=" << observed.valid
-            << " in_trap=" << observed.in_trap
-            << std::endl;
-}
-
-}  // namespace
-
 void spike_observed_insn_t::reset()
 {
   valid = false;
@@ -88,7 +52,6 @@ void spike_state_exporter_t::observe_exec(
     return;
   }
 
-  const bool had_pending_mmu_trace = core->has_pending_mmu_trace;
   core->snapshot.in_trap = false;
   auto& exec = core->snapshot.exec;
   exec.valid = true;
@@ -108,7 +71,6 @@ void spike_state_exporter_t::observe_exec(
     core->snapshot.mmu_trace = {};
     core->snapshot.mmu_trace.paddr = exec.paddr;
   }
-  log_snapshot_observe_exec_debug(hart_id, exec, had_pending_mmu_trace, pc);
 }
 
 reg_t spike_state_exporter_t::observe_trap(
@@ -195,15 +157,6 @@ void spike_state_exporter_t::observe_fetch(
     fetch.bits = bits;
   }
   (void)length;
-}
-
-void spike_state_exporter_t::save_stale_fetch(size_t hart_id)
-{
-  auto* core = core_state(hart_id);
-  if (!core) {
-    return;
-  }
-  core->snapshot.stale_fetch = core->snapshot.fetch;
 }
 
 void spike_state_exporter_t::set_mmu_paddr(size_t hart_id, uint64_t paddr)
