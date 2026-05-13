@@ -367,9 +367,8 @@ public:
 
   inline icache_entry_t* refill_icache(reg_t addr, icache_entry_t* entry)
   {
-    spike_forget_fetch_paddr(this);
     insn_bits_t insn = fetch_insn_parcel(addr);
-    auto paddr_to_record = curr_fetch_paddr ? curr_fetch_paddr : spike_fetch_paddr(this, addr);
+    auto paddr_to_record = curr_fetch_paddr;
     unsigned length = insn_length(insn);
 
     for (unsigned pos = sizeof(insn_parcel_t); pos < length; pos += sizeof(insn_parcel_t)) {
@@ -442,7 +441,6 @@ public:
     auto paddr = entry.data.target_addr + pgoff;
     if (hit && tlb == tlb_insn) {
       curr_fetch_paddr = paddr;
-      spike_note_fetch_paddr(this, paddr);
     }
     return std::make_tuple(hit, host_addr, paddr);
   }

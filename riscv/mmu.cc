@@ -57,7 +57,6 @@ mmu_t::mmu_t(simif_t* sim, endianness_t endianness, processor_t* proc, reg_t cac
 
 mmu_t::~mmu_t()
 {
-  spike_forget_fetch_paddr(this);
 }
 
 void mmu_t::flush_icache()
@@ -122,7 +121,6 @@ inline mmu_t::insn_parcel_t mmu_t::perform_intrapage_fetch(reg_t vaddr, uintptr_
     throw trap_instruction_access_fault(proc->state.v, vaddr, 0, 0);
 
   curr_fetch_paddr = paddr;
-  spike_note_fetch_paddr(this, paddr);
 
   return res;
 }

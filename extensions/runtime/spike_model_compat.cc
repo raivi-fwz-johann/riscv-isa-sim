@@ -4,15 +4,10 @@
 #include "sim.h"
 
 #include <iostream>
-#include <mutex>
-#include <unordered_map>
 
 namespace {
 
 thread_local std::optional<std::string> g_explicit_isa_override;
-
-std::mutex g_fetch_paddr_mu;
-std::unordered_map<const mmu_t*, uint64_t> g_fetch_paddr;
 
 }  // namespace
 
@@ -54,21 +49,3 @@ bool spike_should_yield_load_reservation_on_interleave(const sim_t* sim)
   return !compat || !compat->preserve_lr_sc_reservation_across_interleave();
 }
 
-void spike_note_fetch_paddr(const mmu_t* mmu, uint64_t paddr)
-{
-  std::lock_guard<std::mutex> lock(g_fetch_paddr_mu);
-  g_fetch_paddr[mmu] = paddr;
-}
-
-uint64_t spike_fetch_paddr(const mmu_t* mmu, uint64_t fallback_paddr)
-{
-  std::lock_guard<std::mutex> lock(g_fetch_paddr_mu);
-  auto it = g_fetch_paddr.find(mmu);
-  return it == g_fetch_paddr.end() ? fallback_paddr : it->second;
-}
-
-void spike_forget_fetch_paddr(const mmu_t* mmu)
-{
-  std::lock_guard<std::mutex> lock(g_fetch_paddr_mu);
-  g_fetch_paddr.erase(mmu);
-}

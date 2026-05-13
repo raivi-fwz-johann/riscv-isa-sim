@@ -38,6 +38,3 @@ private:
 
 const char* spike_resolve_boot_isa_override(const char* dtb_file, const char* dtb_isa);
 bool spike_should_yield_load_reservation_on_interleave(const sim_t* sim);
-void spike_note_fetch_paddr(const mmu_t* mmu, uint64_t paddr);
-uint64_t spike_fetch_paddr(const mmu_t* mmu, uint64_t fallback_paddr);
-void spike_forget_fetch_paddr(const mmu_t* mmu);
