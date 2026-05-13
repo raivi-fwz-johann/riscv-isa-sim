@@ -136,33 +136,6 @@ void decode_src_regs(uint32_t bits, std::vector<RegValue>& src_regs)
       break;
   }
 }
-
-void log_fetch_inst_trace(const InstTrace& trace)
-{
-  const auto trap = trace.GetTrapInfo();
-  std::cout << "fetchInstOnly return {"
-            << std::hex
-            << "id=0x" << trace.getId()
-            << ", pc=0x" << trace.getPc()
-            << ", npc=0x" << trace.getNPc()
-            << ", bits=0x" << trace.getBits()
-            << ", ppn=0x" << trace.getPcPAddr()
-            << ", ppn2=0x" << trace.getPcPAddr2()
-            << std::boolalpha
-            << ", in_trap=" << trace.inTrap()
-            << ", in_wfi=" << trace.inWFI()
-            << std::hex
-            << ", cause=0x" << trap.cause
-            << ", tval=0x" << trap.tval
-            << ", has_tval2=" << trap.has_tval2
-            << ", tval2=0x" << trap.tval2
-            << ", mmu_paddr=0x" << trace.m_mmuTrace.paddr
-            << "}"
-            << std::noboolalpha
-            << std::dec
-            << std::endl;
-}
-
 }  // namespace
 
 static Float128 toFloat128(float128_t val) {
@@ -474,14 +447,13 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
 }
 
 InstTrace RawSpike::fetchInstOnly(uint64_t Pc, uint32_t CId, uint64_t IId) {
-  InstTrace res(IId, Pc);
+    insn_fetch_t insn;
   try {
-    auto insn = m_Simulator->get_core(CId)->get_mmu()->ext_fetch_insn(Pc);
-  res = InstTrace(IId, Pc, insn.insn.bits(), insn.pc_ppn);
+    insn = m_Simulator->get_core(CId)->get_mmu()->ext_fetch_insn(Pc);
   } catch (...) {
+    return InstTrace(IId, Pc);
   }
-  log_fetch_inst_trace(res);
-  return res;
+  return InstTrace(IId, Pc, insn.insn.bits(), insn.pc_ppn);
 }
 
 uint64_t RawSpike::vaddr2paddr(uint64_t vaddr, uint32_t CId) {
