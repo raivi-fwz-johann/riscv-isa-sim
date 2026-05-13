@@ -190,7 +190,6 @@ public:
 
     MMU_OBSERVE_STORE(addr, val, sizeof(T));
     auto* hook = hook_dispatcher();
-    bool used_slow_path = false;
     std::shared_ptr<bool> real_store;
     if (hook) {
       if (!hook->should_continue()) {
@@ -207,20 +206,8 @@ public:
     if (!xlate_flags.is_special_access() && likely(aligned && tlb_hit)) {
       *(target_endian<T>*)host_addr = to_target(val);
     } else {
-      used_slow_path = true;
       target_endian<T> target_val = to_target(val);
       store_slow_path(addr, sizeof(T), (const uint8_t*)&target_val, xlate_flags, true, false);
-    }
-    if (real_store) {
-      *real_store = true;
-    }
-    if (!used_slow_path && unlikely(mem_log_active())) {
-      if (!proc->state.log_mem_write.empty() && std::get<0>(proc->state.log_mem_write.back()) == addr) {
-        std::get<3>(proc->state.log_mem_write.back()) = paddr;
-      } else {
-        proc->state.log_mem_write.push_back(
-          std::make_tuple(addr, reg_t(val), uint8_t(sizeof(T)), paddr));
-      }
     }
   }
 
