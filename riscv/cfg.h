@@ -2,6 +2,7 @@
 #ifndef _RISCV_CFG_H
 #define _RISCV_CFG_H
 
+#include <map>
 #include <optional>
 #include <vector>
 #include "decode.h"
@@ -59,6 +60,20 @@ private:
   reg_t size;
 };
 
+class start_pc_t
+{
+public:
+  void set_global(reg_t pc);
+
+  void set_override(size_t hart_id, reg_t pc);
+
+  std::optional<reg_t> get(size_t hart_id) const;
+
+private:
+  std::optional<reg_t>    global_pc;
+  std::map<size_t, reg_t> hart_pcs;
+};
+
 class cfg_t
 {
 public:
@@ -72,7 +87,9 @@ public:
   reg_t                   pmpregions;
   reg_t                   pmpgranularity;
   std::vector<mem_cfg_t>  mem_layout;
+  // rivai beg: per-hart start PC override
   std::optional<reg_t>    start_pc;
+  // rivai end
   std::vector<size_t>     hartids;
   bool                    explicit_hartids;
   bool                    real_time_clint;

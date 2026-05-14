@@ -26,6 +26,7 @@
 #undef STATE
 #define STATE (*state)
 
+// rivai beg: access hook dispatcher from processor context
 static inline spike_hook_dispatcher_t* get_hook_dispatcher(processor_t* proc)
 {
   if (!proc) {
@@ -41,6 +42,7 @@ static inline spike_hook_dispatcher_t* get_hook_dispatcher(processor_t* proc)
   auto* runtime = sim->runtime_context();
   return runtime ? runtime->hook_dispatcher() : nullptr;
 }
+// rivai end
 
 static inline spike_log_manager_t* get_log_manager(processor_t* proc)
 {
@@ -100,6 +102,7 @@ csr_t::~csr_t() {
 }
 
 void csr_t::write(const reg_t val) noexcept {
+  // rivai beg: hook for CSR write interception (allow/deny + observation)
   if (commits_log_active(proc)) {
     if (auto* hook = get_hook_dispatcher(proc)) {
       if (!hook->allow_csr_write(int(address), val)) {
@@ -111,6 +114,7 @@ void csr_t::write(const reg_t val) noexcept {
       const bool success = unlogged_write(val);
       if (success) {
         *real_store = true;
+      // rivai end
         log_write();
       }
       return;

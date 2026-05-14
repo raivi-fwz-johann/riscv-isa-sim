@@ -30,11 +30,15 @@ class htif_t : public chunked_memif_t
   int run();
   bool done();
   int exit_code();
+  // rivai beg: query whether simulation has ended
   bool is_end() const { return should_exit(); }
+  // rivai end
   void set_expected_xlen(unsigned int m) { expected_xlen = m; }
   virtual memif_t& memif() { return mem; }
+  // rivai beg: expose device list and host-disable flag for model layer
   device_list_t& get_devices() { return device_list; }
   virtual bool host_disabled() const { return false; }
+  // rivai end
 
   template<typename T> inline T from_target(target_endian<T> n) const
   {
@@ -54,8 +58,10 @@ class htif_t : public chunked_memif_t
 
   addr_t get_tohost_addr() { return tohost_addr; }
   addr_t get_fromhost_addr() { return fromhost_addr; }
+  // rivai beg: allow model to set tohost/fromhost addresses after init
   void set_tohost_addr(addr_t value) { tohost_addr = value; }
   void set_fromhost_addr(addr_t value) { fromhost_addr = value; }
+  // rivai end
 
  protected:
   virtual void reset() = 0;

@@ -120,7 +120,9 @@ inline mmu_t::insn_parcel_t mmu_t::perform_intrapage_fetch(reg_t vaddr, uintptr_
   else if (!mmio_fetch(paddr, sizeof(res), (uint8_t*)&res))
     throw trap_instruction_access_fault(proc->state.v, vaddr, 0, 0);
 
+  // rivai beg: record the physical address of this parcel fetch
   curr_fetch_paddr = paddr;
+  // rivai end
 
   return res;
 }
@@ -356,8 +358,10 @@ void mmu_t::load_slow_path(reg_t original_addr, std::size_t len,
     check_triggers(triggers::OPERATION_LOAD,
       transformed_addr, access_info.effective_virt, len, bytes);
 
+  // rivai beg: upstream mem log push (3-tuple, paddr tracked via inline hook)
   if (unlikely(proc->get_log_commits_enabled()))
     proc->state.log_mem_read.push_back(std::make_tuple(original_addr, 0, len));
+  // rivai end
 }
 
 inline void mmu_t::perform_intrapage_store(reg_t vaddr, uintptr_t host_addr, reg_t paddr, reg_t len, const uint8_t* bytes, xlate_flags_t xlate_flags)
@@ -417,6 +421,7 @@ void mmu_t::store_slow_path(reg_t original_addr, std::size_t len,
 
   auto access_info = generate_access_info(original_addr, STORE, xlate_flags);
   reg_t transformed_addr = access_info.transformed_vaddr;
+  // rivai beg: compute paddr for mem log hook (best-effort, fallback = vaddr)
   reg_t log_paddr = original_addr;
   if (actually_store && proc && unlikely(proc->get_log_commits_enabled())) {
     auto log_len = std::min<reg_t>(len, PGSIZE - transformed_addr % PGSIZE);
@@ -424,6 +429,7 @@ void mmu_t::store_slow_path(reg_t original_addr, std::size_t len,
       log_paddr = translate(access_info, log_len);
     } catch (...) {}
   }
+  // rivai end
 
   if (check_triggers_store) {
     if (actually_store) {
@@ -453,6 +459,7 @@ void mmu_t::store_slow_path(reg_t original_addr, std::size_t len,
     store_slow_path_intrapage(len, bytes, access_info, actually_store);
   }
 
+  // rivai beg: upstream mem log push (3-tuple) + hook for model paddr tracking
   if (actually_store && proc && unlikely(proc->get_log_commits_enabled())) {
     for (size_t offset = 0; offset < len; offset += sizeof(reg_t)) {
       auto this_size = std::min(len - offset, sizeof(reg_t));
@@ -463,6 +470,7 @@ void mmu_t::store_slow_path(reg_t original_addr, std::size_t len,
         hook->on_mem_log(proc->get_id(), reg_t(original_addr + offset), this_data, uint8_t(this_size), log_paddr + offset, true);
     }
   }
+  // rivai end
 }
 
 bool mmu_t::flush_tlb_ppn(reg_t ppn, dtlb_entry_t* tlb, reverse_tags_t& filter)

@@ -74,8 +74,10 @@ static void commit_log_reset(processor_t* p)
   p->get_state()->log_reg_write.clear();
   p->get_state()->log_mem_read.clear();
   p->get_state()->log_mem_write.clear();
+  // rivai beg: notify model to clear per-instruction mem log state
   if (auto* hook = get_hook_dispatcher(p))
     hook->on_commit_log_reset(p->get_id());
+  // rivai end
 }
 
 static void commit_log_stash_privilege(processor_t* p)
@@ -245,15 +247,19 @@ static inline reg_t execute_insn_fast(processor_t* p, reg_t pc, insn_fetch_t fet
     commit_log_stash_privilege(p);
   }
 
+  // rivai beg: pre-exec hook (survives traps where on_exec_observe won't fire)
   if (auto* hook = get_hook_dispatcher(p)) {
       hook->on_pre_exec(p->get_id(), &fetch, pc);
   }
+  // rivai end
 
   reg_t npc = fetch.func(p, fetch.insn, pc);
 
+  // rivai beg: post-exec observation hook
   if (auto* hook = get_hook_dispatcher(p)) {
       hook->on_exec_observe(p->get_id(), &fetch, pc, npc);
   }
+  // rivai end
 
   if (fast_commit_log) {
     if (auto* hook = get_hook_dispatcher(p)) {
@@ -272,12 +278,16 @@ static inline reg_t execute_insn_logged(processor_t* p, reg_t pc, insn_fetch_t f
   reg_t npc;
 
   try {
+    // rivai beg: pre-exec hook (survives traps where on_exec_observe won't fire)
     if (auto* hook = get_hook_dispatcher(p)) {
       hook->on_pre_exec(p->get_id(), &fetch, pc);
     }
+    // rivai end
     npc = fetch.func(p, fetch.insn, pc);
+    // rivai beg: post-exec observation hook
     if (auto* hook = get_hook_dispatcher(p)) {
       hook->on_exec_observe(p->get_id(), &fetch, pc, npc);
+    // rivai end
     }
     if (commits_log_active(p)) {
       if (auto* hook = get_hook_dispatcher(p)) {

@@ -444,6 +444,7 @@ void processor_t::debug_output_log(std::stringstream *s)
 
 void processor_t::take_trap(trap_t& t, reg_t epc)
 {
+  // rivai beg: load insn at epc for hook observers (paddr, bits for mem trace)
   insn_fetch_t fetch{};
   auto notify_trap_target = [&]() {
     if (auto* hook = get_hook_dispatcher(this)) {
@@ -461,6 +462,7 @@ void processor_t::take_trap(trap_t& t, reg_t epc)
       return;
     }
   }
+  // rivai end
 
   unsigned max_xlen = isa.get_max_xlen();
 

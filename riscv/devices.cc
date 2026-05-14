@@ -22,7 +22,7 @@ bus_t::bus_t(abstract_device_t* fallback)
 
 void bus_t::add_device(reg_t addr, abstract_device_t* dev)
 {
-  /* raivi beg
+  /* rivai beg
   // Allow empty devices by omitting them
   auto size = dev->size();
   if (size == 0)
@@ -43,7 +43,7 @@ void bus_t::add_device(reg_t addr, abstract_device_t* dev)
             it->first, it->first + it->second->size(), addr, addr + size);
     abort();
   }
-  raivi end*/
+   rivai end */
   devices[addr] = dev;
 }
 

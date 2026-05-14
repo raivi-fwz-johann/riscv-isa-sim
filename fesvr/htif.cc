@@ -291,11 +291,13 @@ int htif_t::run()
     std::bind(enq_func, &fromhost_queue, std::placeholders::_1);
 
   if (tohost_addr == 0) {
+    // rivai beg: inner run loop with host-disabled early exit
     while (!should_exit())
       idle();
   }
 
   if (host_disabled()) {
+  // rivai end
     while (!should_exit())
       idle();
   }

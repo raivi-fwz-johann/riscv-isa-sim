@@ -45,8 +45,10 @@ struct insn_fetch_t
 {
   insn_func_t func;
   insn_t insn;
+  // rivai beg: physical page number of the first/last instruction parcel
   reg_t pc_ppn = 0;
   reg_t pc_ppn2 = 0;
+  // rivai end
 };
 
 struct icache_entry_t {
@@ -89,7 +91,9 @@ struct mem_access_info_t {
   const bool effective_virt;
   const xlate_flags_t flags;
   const access_type type;
+  // rivai beg
   bool readonly{false};
+  // rivai end
 };
 
 void throw_access_exception(bool virt, reg_t addr, access_type type);
@@ -110,30 +114,29 @@ public:
   template<typename T>
   T ALWAYS_INLINE load(reg_t addr, xlate_flags_t xlate_flags = {}) {
     target_endian<T> res;
+    // rivai beg: hook to allow external controller to pause hart
     if (auto* hook = hook_dispatcher()) {
       if (!hook->should_continue()) {
         target_endian<T> zero{};
         return from_target(zero);
       }
     }
+    // rivai end
     bool aligned = (addr & (sizeof(T) - 1)) == 0;
-    auto [tlb_hit, host_addr, _] = access_tlb(tlb_load, addr);
+    auto [tlb_hit, host_addr, load_paddr] = access_tlb(tlb_load, addr);
+
+    // rivai beg: pre-hook to survive traps (val=0 before load, paddr from access_tlb)
+    if (proc && unlikely(mem_log_active())) {
+      reg_t paddr = load_paddr ? load_paddr : addr;
+      if (auto* h = hook_dispatcher())
+        h->on_mem_log(proc->get_id(), addr, 0, uint8_t(sizeof(T)), paddr, false);
+    }
+    // rivai end
 
     if (likely(!xlate_flags.is_special_access() && aligned && tlb_hit)) {
       res = *(target_endian<T>*)host_addr;
     } else {
       load_slow_path(addr, sizeof(T), (uint8_t*)&res, xlate_flags);
-    }
-
-    if (proc && unlikely(mem_log_active())) {
-      reg_t ldpaddr = addr;
-      try {
-        auto access_info = generate_access_info(addr, LOAD, {});
-        access_info.readonly = true;
-        ldpaddr = translate(access_info, sizeof(T));
-      } catch (...) {}
-      if (auto* h = hook_dispatcher())
-        h->on_mem_log(proc->get_id(), addr, static_cast<uint64_t>(from_target(res)), uint8_t(sizeof(T)), ldpaddr, false);
     }
 
     MMU_OBSERVE_LOAD(addr,from_target(res),sizeof(T));
@@ -168,6 +171,7 @@ public:
   void ALWAYS_INLINE store(reg_t addr, T val, xlate_flags_t xlate_flags = {}) {
     MMU_OBSERVE_STORE(addr, val, sizeof(T));
 
+    // rivai beg: record store via hook for model mem trace (paddr, survives page faults)
     if (proc && unlikely(mem_log_active())) {
       reg_t paddr = addr;
       try {
@@ -178,7 +182,9 @@ public:
       if (auto* h = hook_dispatcher())
         h->on_mem_log(proc->get_id(), addr, static_cast<uint64_t>(val), uint8_t(sizeof(T)), paddr, true);
     }
+    // rivai end
 
+    // rivai beg: hook for external hart control + sparta pre-store callback
     auto* hook = hook_dispatcher();
     std::shared_ptr<bool> real_store;
     if (hook) {
@@ -190,6 +196,7 @@ public:
         hook->on_pre_store(addr, reg_t(val), uint32_t(sizeof(T)), real_store);
       }
     }
+    // rivai end
     bool aligned = (addr & (sizeof(T) - 1)) == 0;
     auto [tlb_hit, host_addr, _] = access_tlb(tlb_store, addr);
 
@@ -321,6 +328,7 @@ public:
   template<typename T>
   bool store_conditional(reg_t addr, T val)
   {
+    // rivai beg: record sc attempt via hook for model mem trace
     if (proc && unlikely(mem_log_active())) {
       reg_t paddr = addr;
       try {
@@ -331,6 +339,7 @@ public:
       if (auto* h = hook_dispatcher())
         h->on_mem_log(proc->get_id(), addr, static_cast<uint64_t>(val), uint8_t(sizeof(T)), paddr, true);
     }
+    // rivai end
 
     bool have_reservation = check_load_reservation(addr, sizeof(T));
 
@@ -362,7 +371,9 @@ public:
   inline icache_entry_t* refill_icache(reg_t addr, icache_entry_t* entry)
   {
     insn_bits_t insn = fetch_insn_parcel(addr);
+    // rivai beg: capture paddr before it may be overwritten
     auto paddr_to_record = curr_fetch_paddr;
+    // rivai end
     unsigned length = insn_length(insn);
 
     for (unsigned pos = sizeof(insn_parcel_t); pos < length; pos += sizeof(insn_parcel_t)) {
@@ -374,8 +385,10 @@ public:
     entry->tag = addr;
     entry->next = &icache[icache_index(addr + length)];
     entry->data = fetch;
+    // rivai beg: store first/last parcel physical page numbers
     entry->data.pc_ppn = paddr_to_record;
     entry->data.pc_ppn2 = curr_fetch_paddr;
+    // rivai end
 
     auto [check_tracer, _, paddr] = access_tlb(tlb_insn, addr, TLB_FLAGS, TLB_CHECK_TRACER);
     if (unlikely(check_tracer)) {
@@ -385,8 +398,10 @@ public:
       }
     }
     MMU_OBSERVE_FETCH(addr, insn, length);
+    // rivai beg: notify model of instruction fetch with physical addresses
     if (auto* hook = hook_dispatcher())
       hook->on_fetch_observe(proc->get_id(), addr, entry->data.pc_ppn, entry->data.pc_ppn2, insn, length);
+    // rivai end
     return entry;
   }
 
@@ -405,6 +420,7 @@ public:
     return refill_icache(addr, &icache[icache_index(addr)])->data;
   }
 
+  // rivai beg: model-side instruction fetch (uses icache, no side effects on hit)
   inline insn_fetch_t ext_fetch_insn(reg_t addr)
   {
     auto *icache = access_icache(addr);
@@ -414,7 +430,9 @@ public:
     throw std::runtime_error("ext_fetch_insn error");
     return insn_fetch_t();
   }
+  // rivai end
 
+  // rivai beg: virtual-to-physical address translation helpers for model layer
   inline uint64_t vaddr2paddr(uint64_t vaddr)
   {
     return translate(generate_access_info(vaddr, LOAD, {}), 1);
@@ -424,6 +442,7 @@ public:
   {
     return translate(generate_access_info(vaddr, type, {}), len);
   }
+  // rivai end
 
   std::tuple<bool, uintptr_t, reg_t> ALWAYS_INLINE access_tlb(const dtlb_entry_t* tlb, reg_t vaddr, reg_t allowed_flags = 0, reg_t required_flags = 0)
   {
@@ -433,9 +452,11 @@ public:
     bool mmio = allowed_flags & TLB_MMIO & entry.tag;
     auto host_addr = mmio ? 0 : entry.data.host_addr + pgoff;
     auto paddr = entry.data.target_addr + pgoff;
+    // rivai beg: track the physical address of the last instruction fetch
     if (hit && tlb == tlb_insn) {
       curr_fetch_paddr = paddr;
     }
+    // rivai end
     return std::make_tuple(hit, host_addr, paddr);
   }
 
@@ -503,7 +524,9 @@ private:
   memtracer_list_t tracer;
   reg_t load_reservation_address;
   reg_t blocksz;
+  // rivai beg: physical address of the last instruction fetch (set in access_tlb / perform_intrapage_fetch)
   uint64_t curr_fetch_paddr{0};
+  // rivai end
 
   // implement an instruction cache for simulator performance
   icache_entry_t icache[ICACHE_ENTRIES];

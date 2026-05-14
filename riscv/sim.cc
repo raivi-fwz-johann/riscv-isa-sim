@@ -368,10 +368,12 @@ size_t sim_t::idle_ext(size_t n, size_t proc)
     return 0;
 
   current_proc = proc;
+  // rivai beg: check ctrlc_pressed to enter interactive debug mode
   if (debug || ctrlc_pressed)
     interactive();
   else
     step(n);
+  // rivai end
   return n;
 }
 

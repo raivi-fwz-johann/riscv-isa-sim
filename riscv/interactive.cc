@@ -432,10 +432,12 @@ void sim_t::interactive_run(const std::string& cmd, const std::vector<std::strin
 
 void sim_t::interactive_quit(const std::string& cmd, const std::vector<std::string>& args)
 {
+  // rivai beg: route quit through hook for clean model shutdown
   auto* hook = runtime_context() ? runtime_context()->hook_dispatcher() : nullptr;
   if (hook && !hook->on_exit(0)) {
     return;
   }
+  // rivai end
   exit(0);
 }
 

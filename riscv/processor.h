@@ -71,8 +71,10 @@ struct opcode_map_entry_t
 // regnum, data
 typedef std::map<reg_t, freg_t> commit_log_reg_t;
 
+// rivai beg: mem log entry (3-tuple); paddr tracked via hook in state_exporter
 // addr, value, size
 typedef std::vector<std::tuple<reg_t, uint64_t, uint8_t>> commit_log_mem_t;
+// rivai end
 
 // architectural state of a RISC-V hart
 struct state_t
