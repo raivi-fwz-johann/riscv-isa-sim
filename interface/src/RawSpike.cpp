@@ -327,55 +327,55 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
   data.m_MemRs.clear();
   data.m_MemWs.clear();
   if (m_LogMem) {
-    for (auto &item : p->get_state()->log_mem_read) {
-      uint64_t paddr = std::get<3>(item);
+    for (const auto& item : m_StateExporter->mem_loads(CId)) {
+      uint64_t paddr = item.paddr;
     if (paddr == 0) {
       try {
-        paddr = p->get_mmu()->vaddr2paddr(std::get<0>(item), std::get<2>(item), LOAD);
+        paddr = p->get_mmu()->vaddr2paddr(item.addr, item.size, LOAD);
       } catch (...) {
         paddr = 0;
       }
     }
     uint64_t paddr2 = paddr;
-    const auto page0 = std::min<uint64_t>(std::get<2>(item), PGSIZE - (std::get<0>(item) % PGSIZE));
-    if (page0 != std::get<2>(item)) {
+    const auto page0 = std::min<uint64_t>(item.size, PGSIZE - (item.addr % PGSIZE));
+    if (page0 != item.size) {
       try {
-        paddr2 = p->get_mmu()->vaddr2paddr(std::get<0>(item) + page0, std::get<2>(item) - page0, LOAD);
+        paddr2 = p->get_mmu()->vaddr2paddr(item.addr + page0, item.size - page0, LOAD);
       } catch (...) {
         paddr2 = paddr;
       }
     }
-	    data.m_MemRs.emplace_back(std::get<0>(item), std::get<2>(item), std::get<1>(item), paddr, paddr2);
+	    data.m_MemRs.emplace_back(item.addr, item.size, item.val, paddr, paddr2);
 	    data.m_mmuTrace.paddr = paddr;
-	    TraceMemOp op{.vaddr = std::get<0>(item), .paddr = paddr, .size_bytes = static_cast<uint8_t>(std::get<2>(item))};
-	    op.ptw_steps = build_ptw(m_Simulator.get(), p, std::get<0>(item));
+	    TraceMemOp op{.vaddr = item.addr, .paddr = paddr, .size_bytes = item.size};
+	    op.ptw_steps = build_ptw(m_Simulator.get(), p, item.addr);
 	    data.m_MemOps.push_back(std::move(op));
 	  }
-	  for (auto &item : p->get_state()->log_mem_write) {
-    uint64_t paddr = std::get<3>(item);
+      for (const auto& item : m_StateExporter->mem_stores(CId)) {
+      uint64_t paddr = item.paddr;
     if (paddr == 0) {
       try {
-        paddr = p->get_mmu()->vaddr2paddr(std::get<0>(item), std::get<2>(item), STORE);
+        paddr = p->get_mmu()->vaddr2paddr(item.addr, item.size, STORE);
       } catch (...) {
         paddr = 0;
       }
     }
     uint64_t paddr2 = paddr;
-    const auto page0 = std::min<uint64_t>(std::get<2>(item), PGSIZE - (std::get<0>(item) % PGSIZE));
-    if (page0 != std::get<2>(item)) {
+    const auto page0 = std::min<uint64_t>(item.size, PGSIZE - (item.addr % PGSIZE));
+    if (page0 != item.size) {
       try {
-        paddr2 = p->get_mmu()->vaddr2paddr(std::get<0>(item) + page0, std::get<2>(item) - page0, STORE);
+        paddr2 = p->get_mmu()->vaddr2paddr(item.addr + page0, item.size - page0, STORE);
       } catch (...) {
         paddr2 = paddr;
       }
     }
-	    data.m_MemWs.emplace_back(std::get<0>(item), std::get<2>(item), std::get<1>(item), paddr, paddr2);
+	    data.m_MemWs.emplace_back(item.addr, item.size, item.val, paddr, paddr2);
 	    data.m_mmuTrace.paddr = paddr;
-	    TraceMemOp op{.vaddr = std::get<0>(item), .paddr = paddr, .size_bytes = static_cast<uint8_t>(std::get<2>(item))};
-	    op.ptw_steps = build_ptw(m_Simulator.get(), p, std::get<0>(item));
+	    TraceMemOp op{.vaddr = item.addr, .paddr = paddr, .size_bytes = item.size};
+	    op.ptw_steps = build_ptw(m_Simulator.get(), p, item.addr);
 	    data.m_MemOps.push_back(std::move(op));
 	  }
-	  }
+      }
 #endif
 
 #if defined (FULL_TRACE)

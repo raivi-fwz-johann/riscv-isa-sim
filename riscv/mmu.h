@@ -119,31 +119,21 @@ public:
     bool aligned = (addr & (sizeof(T) - 1)) == 0;
     auto [tlb_hit, host_addr, _] = access_tlb(tlb_load, addr);
 
-    if (unlikely(mem_log_active())) {
-      if (proc->state.log_mem_read.empty() || std::get<0>(proc->state.log_mem_read.back()) != addr) {
-        // Record it first to prevent trap-time load metadata loss.
-        proc->state.log_mem_read.push_back(
-          std::make_tuple(addr, reg_t(0), uint8_t(sizeof(T)), addr));
-        auto access_info = generate_access_info(addr, LOAD, {});
-        access_info.readonly = true;
-        reg_t paddr = translate(access_info, sizeof(T));
-        std::get<3>(proc->state.log_mem_read.back()) = paddr;
-      }
-    }
-
     if (likely(!xlate_flags.is_special_access() && aligned && tlb_hit)) {
       res = *(target_endian<T>*)host_addr;
     } else {
       load_slow_path(addr, sizeof(T), (uint8_t*)&res, xlate_flags);
     }
 
-    if (unlikely(mem_log_active())) {
-      if (!proc->state.log_mem_read.empty() && std::get<0>(proc->state.log_mem_read.back()) == addr) {
-        std::get<1>(proc->state.log_mem_read.back()) = reg_t(from_target(res));
-      } else {
-        proc->state.log_mem_read.push_back(
-          std::make_tuple(addr, reg_t(from_target(res)), uint8_t(sizeof(T)), reg_t(0)));
-      }
+    if (proc && unlikely(mem_log_active())) {
+      reg_t ldpaddr = addr;
+      try {
+        auto access_info = generate_access_info(addr, LOAD, {});
+        access_info.readonly = true;
+        ldpaddr = translate(access_info, sizeof(T));
+      } catch (...) {}
+      if (auto* h = hook_dispatcher())
+        h->on_mem_log(proc->get_id(), addr, static_cast<uint64_t>(from_target(res)), uint8_t(sizeof(T)), ldpaddr, false);
     }
 
     MMU_OBSERVE_LOAD(addr,from_target(res),sizeof(T));
@@ -176,19 +166,19 @@ public:
 
   template<typename T>
   void ALWAYS_INLINE store(reg_t addr, T val, xlate_flags_t xlate_flags = {}) {
-    if (unlikely(mem_log_active())) {
-      if (proc->state.log_mem_write.empty() || std::get<0>(proc->state.log_mem_write.back()) != addr) {
-        // Record it first to prevent trap-time store metadata loss.
-        proc->state.log_mem_write.push_back(
-          std::make_tuple(addr, reg_t(val), uint8_t(sizeof(T)), addr));
+    MMU_OBSERVE_STORE(addr, val, sizeof(T));
+
+    if (proc && unlikely(mem_log_active())) {
+      reg_t paddr = addr;
+      try {
         auto access_info = generate_access_info(addr, STORE, {});
         access_info.readonly = true;
-        reg_t paddr = translate(access_info, sizeof(T));
-        std::get<3>(proc->state.log_mem_write.back()) = paddr;
-      }
+        paddr = translate(access_info, sizeof(T));
+      } catch (...) {}
+      if (auto* h = hook_dispatcher())
+        h->on_mem_log(proc->get_id(), addr, static_cast<uint64_t>(val), uint8_t(sizeof(T)), paddr, true);
     }
 
-    MMU_OBSERVE_STORE(addr, val, sizeof(T));
     auto* hook = hook_dispatcher();
     std::shared_ptr<bool> real_store;
     if (hook) {
@@ -201,7 +191,7 @@ public:
       }
     }
     bool aligned = (addr & (sizeof(T) - 1)) == 0;
-    auto [tlb_hit, host_addr, paddr] = access_tlb(tlb_store, addr);
+    auto [tlb_hit, host_addr, _] = access_tlb(tlb_store, addr);
 
     if (!xlate_flags.is_special_access() && likely(aligned && tlb_hit)) {
       *(target_endian<T>*)host_addr = to_target(val);
@@ -331,13 +321,17 @@ public:
   template<typename T>
   bool store_conditional(reg_t addr, T val)
   {
-    if (unlikely(mem_log_active())) {
-      proc->state.log_mem_write.push_back(std::make_tuple(addr, reg_t(val), uint8_t(sizeof(T)), addr));
-      auto access_info = generate_access_info(addr, STORE, {});
-      access_info.readonly = true;
-      reg_t paddr = translate(access_info, sizeof(T));
-      std::get<3>(proc->state.log_mem_write.back()) = paddr;
+    if (proc && unlikely(mem_log_active())) {
+      reg_t paddr = addr;
+      try {
+        auto access_info = generate_access_info(addr, STORE, {});
+        access_info.readonly = true;
+        paddr = translate(access_info, sizeof(T));
+      } catch (...) {}
+      if (auto* h = hook_dispatcher())
+        h->on_mem_log(proc->get_id(), addr, static_cast<uint64_t>(val), uint8_t(sizeof(T)), paddr, true);
     }
+
     bool have_reservation = check_load_reservation(addr, sizeof(T));
 
     if (have_reservation)

@@ -48,4 +48,6 @@ public:
   virtual void on_device_uart_tx(abstract_device_t*, uint8_t) {}
   virtual void on_mmu_walk(const spike_mmu_walk_observe_t&) {}
   virtual void on_fetch_observe(uint32_t, reg_t, reg_t, reg_t, insn_bits_t, unsigned) {}
+  virtual void on_mem_log(uint32_t, reg_t, uint64_t, uint8_t, reg_t, bool) {}
+  virtual void on_commit_log_reset(uint32_t) {}
 };

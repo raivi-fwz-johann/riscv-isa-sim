@@ -202,6 +202,40 @@ void spike_state_exporter_t::reset_observed(size_t hart_id)
   core->snapshot.pre_exec.reset();
   core->snapshot.stale_fetch.reset();
   core->snapshot.in_trap = false;
+  core->mem_loads.clear();
+  core->mem_stores.clear();
+}
+
+void spike_state_exporter_t::add_mem_log(size_t hart_id, reg_t addr, uint64_t val, uint8_t size, reg_t paddr, bool is_store)
+{
+  auto* core = core_state(hart_id);
+  if (!core) return;
+  if (is_store)
+    core->mem_stores.push_back({addr, val, size, paddr});
+  else
+    core->mem_loads.push_back({addr, val, size, paddr});
+}
+
+void spike_state_exporter_t::clear_mem_log(size_t hart_id)
+{
+  auto* core = core_state(hart_id);
+  if (!core) return;
+  core->mem_loads.clear();
+  core->mem_stores.clear();
+}
+
+const std::vector<spike_state_exporter_t::MemLogItem>& spike_state_exporter_t::mem_loads(size_t hart_id) const
+{
+  static const std::vector<MemLogItem> empty;
+  auto* core = core_state(hart_id);
+  return core ? core->mem_loads : empty;
+}
+
+const std::vector<spike_state_exporter_t::MemLogItem>& spike_state_exporter_t::mem_stores(size_t hart_id) const
+{
+  static const std::vector<MemLogItem> empty;
+  auto* core = core_state(hart_id);
+  return core ? core->mem_stores : empty;
 }
 
 spike_state_exporter_t::core_state_t* spike_state_exporter_t::core_state(size_t hart_id)

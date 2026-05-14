@@ -72,3 +72,15 @@ void SpikeSimObjHooker::on_fetch_observe(uint32_t hart_id, reg_t vaddr, reg_t pa
     m_SimObj->m_StateExporter->observe_fetch(hart_id, vaddr, paddr, paddr2, bits, length);
   }
 }
+
+void SpikeSimObjHooker::on_mem_log(uint32_t hart_id, reg_t addr, uint64_t val, uint8_t size, reg_t paddr, bool is_store) {
+  if (m_SimObj->m_StateExporter) {
+    m_SimObj->m_StateExporter->add_mem_log(hart_id, addr, val, size, paddr, is_store);
+  }
+}
+
+void SpikeSimObjHooker::on_commit_log_reset(uint32_t hart_id) {
+  if (m_SimObj->m_StateExporter) {
+    m_SimObj->m_StateExporter->clear_mem_log(hart_id);
+  }
+}

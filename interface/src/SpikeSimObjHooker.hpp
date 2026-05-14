@@ -26,6 +26,8 @@ public:
   void on_device_uart_tx(abstract_device_t* device, uint8_t byte) override;
   void on_mmu_walk(const spike_mmu_walk_observe_t& event) override;
   void on_fetch_observe(uint32_t hart_id, reg_t vaddr, reg_t paddr, reg_t paddr2, insn_bits_t bits, unsigned length) override;
+  void on_mem_log(uint32_t hart_id, reg_t addr, uint64_t val, uint8_t size, reg_t paddr, bool is_store) override;
+  void on_commit_log_reset(uint32_t hart_id) override;
 
 private:
   RawSpike *m_SimObj = nullptr;

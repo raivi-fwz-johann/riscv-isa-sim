@@ -56,11 +56,25 @@ public:
   bool in_trap(size_t hart_id) const;
   void reset_observed(size_t hart_id);
 
+  struct MemLogItem {
+    reg_t addr = 0;
+    uint64_t val = 0;
+    uint8_t size = 0;
+    reg_t paddr = 0;
+  };
+
+  void add_mem_log(size_t hart_id, reg_t addr, uint64_t val, uint8_t size, reg_t paddr, bool is_store);
+  void clear_mem_log(size_t hart_id);
+  const std::vector<MemLogItem>& mem_loads(size_t hart_id) const;
+  const std::vector<MemLogItem>& mem_stores(size_t hart_id) const;
+
 private:
   struct core_state_t {
     spike_state_snapshot_t snapshot;
     MmuTrace pending_mmu_trace{};
     bool has_pending_mmu_trace = false;
+    std::vector<MemLogItem> mem_loads;
+    std::vector<MemLogItem> mem_stores;
   };
 
   core_state_t* core_state(size_t hart_id);

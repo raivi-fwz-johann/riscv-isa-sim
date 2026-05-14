@@ -74,6 +74,8 @@ static void commit_log_reset(processor_t* p)
   p->get_state()->log_reg_write.clear();
   p->get_state()->log_mem_read.clear();
   p->get_state()->log_mem_write.clear();
+  if (auto* hook = get_hook_dispatcher(p))
+    hook->on_commit_log_reset(p->get_id());
 }
 
 static void commit_log_stash_privilege(processor_t* p)
@@ -217,8 +219,6 @@ static void commit_log_print_insn(processor_t *p, reg_t pc, insn_t insn)
   for (auto item : load) {
     fprintf(log_file, " mem ");
     commit_log_print_value(log_file, xlen, std::get<0>(item));
-    fprintf(log_file, " ");
-    commit_log_print_value(log_file, xlen, std::get<3>(item));
   }
 
   for (auto item : store) {
@@ -226,8 +226,6 @@ static void commit_log_print_insn(processor_t *p, reg_t pc, insn_t insn)
     commit_log_print_value(log_file, xlen, std::get<0>(item));
     fprintf(log_file, " ");
     commit_log_print_value(log_file, std::get<2>(item) << 3, std::get<1>(item));
-    fprintf(log_file, " ");
-    commit_log_print_value(log_file, xlen, std::get<3>(item));
   }
   fprintf(log_file, "\n");
 }

@@ -326,11 +326,6 @@ void mmu_t::load_slow_path(reg_t original_addr, std::size_t len,
 
   auto access_info = generate_access_info(original_addr, LOAD, xlate_flags);
   reg_t transformed_addr = access_info.transformed_vaddr;
-  reg_t log_paddr = 0;
-  if (unlikely(mem_log_active())) {
-    auto log_len = std::min<reg_t>(len, PGSIZE - transformed_addr % PGSIZE);
-    log_paddr = translate(access_info, log_len);
-  }
 
   if (check_triggers_load)
     check_triggers(triggers::OPERATION_LOAD,
@@ -360,6 +355,9 @@ void mmu_t::load_slow_path(reg_t original_addr, std::size_t len,
   if (check_triggers_load)
     check_triggers(triggers::OPERATION_LOAD,
       transformed_addr, access_info.effective_virt, len, bytes);
+
+  if (unlikely(proc->get_log_commits_enabled()))
+    proc->state.log_mem_read.push_back(std::make_tuple(original_addr, 0, len));
 }
 
 inline void mmu_t::perform_intrapage_store(reg_t vaddr, uintptr_t host_addr, reg_t paddr, reg_t len, const uint8_t* bytes, xlate_flags_t xlate_flags)
@@ -419,10 +417,12 @@ void mmu_t::store_slow_path(reg_t original_addr, std::size_t len,
 
   auto access_info = generate_access_info(original_addr, STORE, xlate_flags);
   reg_t transformed_addr = access_info.transformed_vaddr;
-  reg_t log_paddr = 0;
-  if (actually_store && proc && unlikely(mem_log_active())) {
+  reg_t log_paddr = original_addr;
+  if (actually_store && proc && unlikely(proc->get_log_commits_enabled())) {
     auto log_len = std::min<reg_t>(len, PGSIZE - transformed_addr % PGSIZE);
-    log_paddr = translate(access_info, log_len);
+    try {
+      log_paddr = translate(access_info, log_len);
+    } catch (...) {}
   }
 
   if (check_triggers_store) {
@@ -453,16 +453,14 @@ void mmu_t::store_slow_path(reg_t original_addr, std::size_t len,
     store_slow_path_intrapage(len, bytes, access_info, actually_store);
   }
 
-  if (actually_store && proc && unlikely(mem_log_active())) {
-    if (!proc->state.log_mem_write.empty() && std::get<0>(proc->state.log_mem_write.back()) == original_addr) {
-      std::get<3>(proc->state.log_mem_write.back()) = log_paddr;
-    } else {
-      for (size_t offset = 0; offset < len; offset += sizeof(reg_t)) {
-        auto this_size = std::min(len - offset, sizeof(reg_t));
-        auto this_data = reg_from_bytes(this_size, bytes + offset);
-        proc->state.log_mem_write.push_back(
-          std::make_tuple(original_addr + offset, this_data, this_size, log_paddr + offset));
-      }
+  if (actually_store && proc && unlikely(proc->get_log_commits_enabled())) {
+    for (size_t offset = 0; offset < len; offset += sizeof(reg_t)) {
+      auto this_size = std::min(len - offset, sizeof(reg_t));
+      auto this_data = reg_from_bytes(this_size, bytes + offset);
+      proc->state.log_mem_write.push_back(
+        std::make_tuple(original_addr + offset, this_data, this_size));
+      if (auto* hook = hook_dispatcher())
+        hook->on_mem_log(proc->get_id(), reg_t(original_addr + offset), this_data, uint8_t(this_size), log_paddr + offset, true);
     }
   }
 }
