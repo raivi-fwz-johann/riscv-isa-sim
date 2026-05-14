@@ -131,7 +131,7 @@ public:
 
   // Called after an instruction has been executed.
   // [in] hart_id  core id
-  // [in] fetch    insn_fetch_t* with decoded instruction, pc_ppn, pc_ppn2
+  // [in] fetch    insn_fetch_t* with decoded instruction
   // [in] pc       virtual address of the executed instruction
   // [in] npc      next pc after execution
   virtual void on_exec_observe(uint32_t hart_id, insn_fetch_t* fetch,
@@ -140,15 +140,15 @@ public:
   // Called BEFORE fetch.func() executes — survives traps where
   // on_exec_observe never fires (e.g. page faults during execution).
   // [in] hart_id  core id
-  // [in] fetch    insn_fetch_t* with decoded instruction, pc_ppn, pc_ppn2
+  // [in] fetch    insn_fetch_t* with decoded instruction
   // [in] pc       virtual address of the instruction
   virtual void on_pre_exec(uint32_t hart_id, insn_fetch_t* fetch, reg_t pc) {}
 
   // Called every time the icache is refilled (TLB miss, page fault, …).
   // [in] hart_id  core id
   // [in] vaddr    virtual address of the fetch
-  // [in] paddr    physical address (pc_ppn — first parcel)
-  // [in] paddr2   physical address (pc_ppn2 — last parcel, differs for cross-page)
+  // [in] paddr    physical address of the first instruction parcel
+  // [in] paddr2   physical address of the last parcel (differs for cross-page instructions)
   // [in] bits     raw instruction bits
   // [in] length   instruction length in bytes (2 or 4)
   virtual void on_fetch_observe(uint32_t hart_id, reg_t vaddr, reg_t paddr,

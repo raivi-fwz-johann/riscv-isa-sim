@@ -11,8 +11,8 @@ int main()
 
   insn_fetch_t fetch{};
   fetch.insn = insn_t(0x00000013);
-  fetch.pc_ppn = 0x2000;
 
+  exporter.observe_fetch(1, 0x1000, 0x2000, 0x2000, 0x00000013, 4);
   exporter.observe_exec(1, &fetch, 0x1000, 0x1004);
   auto* exec_snapshot = exporter.snapshot(1);
   if (!exec_snapshot || !exec_snapshot->exec.valid)

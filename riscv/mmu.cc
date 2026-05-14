@@ -120,10 +120,9 @@ inline mmu_t::insn_parcel_t mmu_t::perform_intrapage_fetch(reg_t vaddr, uintptr_
   else if (!mmio_fetch(paddr, sizeof(res), (uint8_t*)&res))
     throw trap_instruction_access_fault(proc->state.v, vaddr, 0, 0);
 
-  // rivai beg: record the physical address of this parcel fetch
+  // rivai beg: record physical address of this parcel fetch
   curr_fetch_paddr = paddr;
   // rivai end
-
   return res;
 }
 

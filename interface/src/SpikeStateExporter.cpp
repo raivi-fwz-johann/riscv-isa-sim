@@ -37,8 +37,8 @@ void spike_state_exporter_t::observe_pre_exec(
   pe.valid = true;
   pe.pc = pc;
   pe.bits = in ? in->insn.bits() : 0;
-  pe.paddr = in ? in->pc_ppn : ERROR_PC_ADDR;
-  pe.paddr2 = in ? in->pc_ppn2 : ERROR_PC_ADDR;
+  pe.paddr = core->snapshot.fetch.paddr;
+  pe.paddr2 = core->snapshot.fetch.paddr2;
 }
 
 void spike_state_exporter_t::observe_exec(
@@ -57,8 +57,8 @@ void spike_state_exporter_t::observe_exec(
   exec.valid = true;
   exec.pc = pc;
   exec.bits = in ? in->insn.bits() : 0;
-  exec.paddr = in ? in->pc_ppn : ERROR_PC_ADDR;
-  exec.paddr2 = in ? in->pc_ppn2 : exec.paddr;
+  exec.paddr = core->snapshot.fetch.paddr;
+  exec.paddr2 = core->snapshot.fetch.paddr2;
   exec.npc = ERROR_PC_ADDR;
   if (npc != 0 && !invalid_pc(npc)) {
     exec.npc = npc;

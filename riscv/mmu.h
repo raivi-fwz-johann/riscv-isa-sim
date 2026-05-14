@@ -45,10 +45,6 @@ struct insn_fetch_t
 {
   insn_func_t func;
   insn_t insn;
-  // rivai beg: physical page number of the first/last instruction parcel
-  reg_t pc_ppn = 0;
-  reg_t pc_ppn2 = 0;
-  // rivai end
 };
 
 struct icache_entry_t {
@@ -377,8 +373,8 @@ public:
   inline icache_entry_t* refill_icache(reg_t addr, icache_entry_t* entry)
   {
     insn_bits_t insn = fetch_insn_parcel(addr);
-    // rivai beg: capture paddr before it may be overwritten
-    auto paddr_to_record = curr_fetch_paddr;
+    // rivai beg: first parcel paddr, set by fetch_insn_parcel → access_tlb/perform_intrapage_fetch
+    auto fetch_paddr = curr_fetch_paddr;
     // rivai end
     unsigned length = insn_length(insn);
 
@@ -391,10 +387,6 @@ public:
     entry->tag = addr;
     entry->next = &icache[icache_index(addr + length)];
     entry->data = fetch;
-    // rivai beg: store first/last parcel physical page numbers
-    entry->data.pc_ppn = paddr_to_record;
-    entry->data.pc_ppn2 = curr_fetch_paddr;
-    // rivai end
 
     auto [check_tracer, _, paddr] = access_tlb(tlb_insn, addr, TLB_FLAGS, TLB_CHECK_TRACER);
     if (unlikely(check_tracer)) {
@@ -406,7 +398,7 @@ public:
     MMU_OBSERVE_FETCH(addr, insn, length);
     // rivai beg: notify model of instruction fetch with physical addresses
     if (auto* hook = hook_dispatcher())
-      hook->on_fetch_observe(proc->get_id(), addr, entry->data.pc_ppn, entry->data.pc_ppn2, insn, length);
+      hook->on_fetch_observe(proc->get_id(), addr, fetch_paddr, curr_fetch_paddr, insn, length);
     // rivai end
     return entry;
   }
@@ -458,7 +450,7 @@ public:
     bool mmio = allowed_flags & TLB_MMIO & entry.tag;
     auto host_addr = mmio ? 0 : entry.data.host_addr + pgoff;
     auto paddr = entry.data.target_addr + pgoff;
-    // rivai beg: track the physical address of the last instruction fetch
+    // rivai beg: track physical address of the last instruction fetch
     if (hit && tlb == tlb_insn) {
       curr_fetch_paddr = paddr;
     }
@@ -530,7 +522,7 @@ private:
   memtracer_list_t tracer;
   reg_t load_reservation_address;
   reg_t blocksz;
-  // rivai beg: physical address of the last instruction fetch (set in access_tlb / perform_intrapage_fetch)
+  // rivai beg: physical address captured during fetch_insn_parcel, used by refill_icache for hook
   uint64_t curr_fetch_paddr{0};
   // rivai end
 

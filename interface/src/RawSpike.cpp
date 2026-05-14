@@ -447,7 +447,9 @@ InstTrace RawSpike::fetchInstOnly(uint64_t Pc, uint32_t CId, uint64_t IId) {
   } catch (...) {
     return InstTrace(IId, Pc);
   }
-  return InstTrace(IId, Pc, insn.insn.bits(), insn.pc_ppn);
+  uint64_t ppn = 0;
+  try { ppn = m_Simulator->get_core(CId)->get_mmu()->vaddr2paddr(Pc); } catch (...) {}
+  return InstTrace(IId, Pc, insn.insn.bits(), ppn);
 }
 
 uint64_t RawSpike::vaddr2paddr(uint64_t vaddr, uint32_t CId) {
