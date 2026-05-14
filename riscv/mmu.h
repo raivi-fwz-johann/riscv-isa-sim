@@ -123,15 +123,21 @@ public:
     }
     // rivai end
     bool aligned = (addr & (sizeof(T) - 1)) == 0;
-    auto [tlb_hit, host_addr, load_paddr] = access_tlb(tlb_load, addr);
 
-    // rivai beg: pre-hook to survive traps (val=0 before load, paddr from access_tlb)
+    // rivai beg: pre-hook to survive load page faults (val=0, paddr from translate)
     if (proc && unlikely(mem_log_active())) {
-      reg_t paddr = load_paddr ? load_paddr : addr;
+      reg_t ldpaddr = addr;
+      try {
+        auto access_info = generate_access_info(addr, LOAD, {});
+        access_info.readonly = true;
+        ldpaddr = translate(access_info, sizeof(T));
+      } catch (...) {}
       if (auto* h = hook_dispatcher())
-        h->on_mem_log(proc->get_id(), addr, 0, uint8_t(sizeof(T)), paddr, false);
+        h->on_mem_log(proc->get_id(), addr, 0, uint8_t(sizeof(T)), ldpaddr, false);
     }
     // rivai end
+
+    auto [tlb_hit, host_addr, _] = access_tlb(tlb_load, addr);
 
     if (likely(!xlate_flags.is_special_access() && aligned && tlb_hit)) {
       res = *(target_endian<T>*)host_addr;
