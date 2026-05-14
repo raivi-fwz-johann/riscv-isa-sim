@@ -146,9 +146,7 @@ void spike_state_exporter_t::observe_fetch(
   if (!core) {
     return;
   }
-  auto& snapshot = core->snapshot;
-  snapshot.stale_fetch = snapshot.fetch;  // save before overwrite
-  auto& fetch = snapshot.fetch;
+  auto& fetch = core->snapshot.fetch;
   fetch.valid = true;
   fetch.pc = vaddr;
   fetch.paddr = paddr;
@@ -200,7 +198,6 @@ void spike_state_exporter_t::reset_observed(size_t hart_id)
   core->snapshot.fetch.reset();
   core->snapshot.exec.reset();
   core->snapshot.pre_exec.reset();
-  core->snapshot.stale_fetch.reset();
   core->snapshot.in_trap = false;
   core->mem_loads.clear();
   core->mem_stores.clear();

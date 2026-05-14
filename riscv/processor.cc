@@ -444,21 +444,15 @@ void processor_t::debug_output_log(std::stringstream *s)
 
 void processor_t::take_trap(trap_t& t, reg_t epc)
 {
-  // rivai beg: load insn at epc for hook observers (paddr, bits for mem trace)
-  insn_fetch_t fetch{};
+  // rivai beg: notify hook observers of trap
   auto notify_trap_target = [&]() {
     if (auto* hook = get_hook_dispatcher(this)) {
       hook->on_trap_target(get_id(), epc, state.pc);
     }
   };
-  try {
-    fetch = mmu->load_insn(epc);
-  } catch (...) {
-    fetch.insn = insn_t(0x1);
-  }
 
   if (auto* hook = get_hook_dispatcher(this)) {
-    if (hook->on_trap(get_id(), &fetch, epc, t) != 0) {
+    if (hook->on_trap(get_id(), nullptr, epc, t) != 0) {
       return;
     }
   }

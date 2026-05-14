@@ -234,11 +234,8 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
     data.m_NPc = p->get_state()->pc;
   }
 
-  /* paddr: for trap use stale_fetch (pre-getNextInst-overwrite), else fetch > exec. */
-  if (in_trap && snapshot->stale_fetch.valid) {
-    data.m_PPN = snapshot->stale_fetch.paddr;
-    data.m_PPN2 = snapshot->stale_fetch.paddr2;
-  } else if (snapshot->fetch.valid) {
+  /* paddr: fetch (from last refill_icache, matches OLD curr_info) > exec. */
+  if (snapshot->fetch.valid) {
     data.m_PPN = snapshot->fetch.paddr;
     data.m_PPN2 = snapshot->fetch.paddr2;
   } else {
@@ -249,18 +246,14 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
     data.m_PPN2 = data.m_PPN;
   }
 
-  /* bits: pre_exec (pc match) > stale_fetch (trap) > fetch > exec. */
+  /* bits: pre_exec (pc match, survives traps) > fetch (same as OLD curr_info) > exec. */
   if (in_trap && snapshot->pre_exec.valid &&
       snapshot->pre_exec.pc == snapshot->epc) {
     data.m_Bits = snapshot->pre_exec.bits;
-  } else if (in_trap && snapshot->stale_fetch.valid) {
-    data.m_Bits = snapshot->stale_fetch.bits;
-  } else if (in_trap && snapshot->fetch.valid) {
+  } else if (snapshot->fetch.valid) {
     data.m_Bits = snapshot->fetch.bits;
   } else if (snapshot->exec.valid) {
     data.m_Bits = snapshot->exec.bits;
-  } else if (snapshot->fetch.valid) {
-    data.m_Bits = snapshot->fetch.bits;
   }
   if (in_trap && data.m_Bits == 0) {
     data.m_Bits = (data.m_NPc - data.m_Pc == 4) ? 0x13 : 0x1;
