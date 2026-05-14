@@ -50,6 +50,4 @@ private:
 
   run_helper_t m_RunHelper;
   bool m_LogMem = true;
-
-  friend class SpikeSimObjHooker;
 };

@@ -176,7 +176,8 @@ void RawSpike::init(const std::string &ArgsStr) {
     m_StateExporter = std::make_unique<spike_state_exporter_t>();
     m_StateExporter->reset(s->nprocs());
     m_RoiState = std::make_unique<spike_roi_state_t>();
-    s->runtime_context()->set_hook_dispatcher(std::make_unique<SpikeSimObjHooker>(this));
+    s->runtime_context()->set_hook_dispatcher(std::make_unique<SpikeSimObjHooker>(
+        m_StateExporter.get(), m_RoiState.get(), [this]() { stop(); }));
   });
   (void)TmpSim;
   m_Simulator = std::move(m_Boot->sim);

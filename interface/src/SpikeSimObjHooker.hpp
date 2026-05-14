@@ -13,10 +13,16 @@
 #include "Memory.hpp"
 #include "runtime/spike_hook_dispatcher.h"
 
-class RawSpike;
+#include <functional>
+
+class spike_state_exporter_t;
+class spike_roi_state_t;
+
 class SpikeSimObjHooker : public spike_hook_dispatcher_t {
 public:
-  SpikeSimObjHooker(RawSpike *Ptr);
+  SpikeSimObjHooker(spike_state_exporter_t* state_exporter,
+                    spike_roi_state_t* roi_state,
+                    std::function<void()> stop_fn);
 
   bool on_exit(int code) override;
   void on_exec_observe(uint32_t hart_id, insn_fetch_t* in, reg_t pc, reg_t npc) override;
@@ -30,5 +36,7 @@ public:
   void on_commit_log_reset(uint32_t hart_id) override;
 
 private:
-  RawSpike *m_SimObj = nullptr;
+  spike_state_exporter_t* m_StateExporter = nullptr;
+  spike_roi_state_t* m_RoiState = nullptr;
+  std::function<void()> m_StopFn;
 };
