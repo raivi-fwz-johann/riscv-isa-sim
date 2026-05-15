@@ -441,9 +441,6 @@ InstTrace RawSpike::fetchInstOnly(uint64_t Pc, uint32_t CId, uint64_t IId) {
 uint64_t RawSpike::vaddr2paddr(uint64_t vaddr, uint32_t CId) {
   try {
     auto paddr = m_Simulator->get_core(CId)->get_mmu()->vaddr2paddr(vaddr);
-    if (m_StateExporter) {
-      m_StateExporter->set_mmu_paddr(CId, paddr);
-    }
     return paddr;
   } catch (...) {
     return vaddr;

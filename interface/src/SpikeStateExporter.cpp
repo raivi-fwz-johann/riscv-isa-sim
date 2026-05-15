@@ -154,18 +154,6 @@ void spike_state_exporter_t::observe_fetch(
   (void)length;
 }
 
-void spike_state_exporter_t::set_mmu_paddr(size_t hart_id, uint64_t paddr)
-{
-  auto* core = core_state(hart_id);
-  if (!core) {
-    return;
-  }
-
-  core->pending_mmu_trace = {};
-  core->has_pending_mmu_trace = false;
-  core->snapshot.mmu_trace = {};
-  core->snapshot.mmu_trace.paddr = paddr;
-}
 
 const spike_state_snapshot_t* spike_state_exporter_t::snapshot(size_t hart_id) const
 {

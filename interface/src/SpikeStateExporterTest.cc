@@ -67,15 +67,6 @@ int main()
   if (!pending_trace.xf_log.forced_virt)
     return 10;
 
-  exporter.set_mmu_paddr(0, 0x4000);
-  auto direct_trace = exporter.get_mmu_trace(0);
-  if (direct_trace.paddr != 0x4000)
-    return 11;
-  if (direct_trace.pte_paddr[0] != 0 || direct_trace.pte_paddr[1] != 0 || direct_trace.pte_paddr[2] != 0)
-    return 12;
-  if (direct_trace.levels != -1)
-    return 13;
-
   spike_mmu_walk_observe_t trap_walk{};
   trap_walk.hart_id = 1;
   trap_walk.paddr = 0x5000;

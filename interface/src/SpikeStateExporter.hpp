@@ -47,7 +47,6 @@ public:
   void observe_mmu_walk(const spike_mmu_walk_observe_t& event);
   void observe_fetch(size_t hart_id, reg_t vaddr, reg_t paddr, reg_t paddr2, insn_bits_t bits, unsigned length);
 
-  void set_mmu_paddr(size_t hart_id, uint64_t paddr);
   const spike_state_snapshot_t* snapshot(size_t hart_id) const;
   MmuTrace get_mmu_trace(size_t hart_id) const;
   bool in_trap(size_t hart_id) const;

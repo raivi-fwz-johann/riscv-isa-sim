@@ -930,3 +930,12 @@ mem_access_info_t mmu_t::generate_access_info(reg_t addr, access_type type, xlat
   }
   return {addr, transformed_addr, mode, virt, xlate_flags, type};
 }
+
+// rivai beg: virtual-to-physical address translation helper for model layer
+uint64_t mmu_t::vaddr2paddr(uint64_t vaddr, size_t len, access_type type) {
+  auto access_info = generate_access_info(vaddr, type, {});
+  access_info.readonly = true;
+  reg_t paddr = translate(access_info, len);
+  return paddr;
+}
+// rivai end
