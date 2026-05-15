@@ -15,15 +15,15 @@ int main()
   exporter.observe_fetch(1, 0x1000, 0x2000, 0x2000, 0x00000013, 4);
   exporter.observe_exec(1, &fetch, 0x1000, 0x1004);
   auto* exec_snapshot = exporter.snapshot(1);
-  if (!exec_snapshot || !exec_snapshot->exec.valid)
+  if (!exec_snapshot || !exec_snapshot->observed.valid)
     return 1;
-  if (exec_snapshot->exec.pc != 0x1000)
+  if (exec_snapshot->observed.pc != 0x1000)
     return 2;
-  if (exec_snapshot->exec.npc != 0x1004)
+  if (exec_snapshot->observed.npc != 0x1004)
     return 3;
-  if (exec_snapshot->exec.bits != 0x00000013)
+  if (exec_snapshot->observed.bits != 0x00000013)
     return 4;
-  if (exec_snapshot->exec.paddr != 0x2000)
+  if (exec_snapshot->observed.paddr != 0x2000)
     return 5;
   if (exec_snapshot->mmu_trace.paddr != 0x2000)
     return 6;
@@ -32,18 +32,18 @@ int main()
   exec_snapshot = exporter.snapshot(1);
   if (!exec_snapshot)
     return 24;
-  if (exec_snapshot->exec.pc != 0x1004)
+  if (exec_snapshot->observed.pc != 0x1004)
     return 25;
-  if (exec_snapshot->exec.npc != ERROR_PC_ADDR)
+  if (exec_snapshot->observed.npc != ERROR_PC_ADDR)
     return 26;
 
   exporter.observe_exec(1, &fetch, 0x1008, PC_SERIALIZE_BEFORE);
   exec_snapshot = exporter.snapshot(1);
   if (!exec_snapshot)
     return 27;
-  if (exec_snapshot->exec.pc != 0x1008)
+  if (exec_snapshot->observed.pc != 0x1008)
     return 28;
-  if (exec_snapshot->exec.npc != ERROR_PC_ADDR)
+  if (exec_snapshot->observed.npc != ERROR_PC_ADDR)
     return 29;
 
   spike_mmu_walk_observe_t pending_walk{};
@@ -106,7 +106,7 @@ int main()
 
   exporter.reset_observed(1);
   auto* cleared_snapshot = exporter.snapshot(1);
-  if (!cleared_snapshot || cleared_snapshot->exec.valid)
+  if (!cleared_snapshot || cleared_snapshot->observed.valid)
     return 21;
 
   auto preserved_trace = exporter.get_mmu_trace(1);

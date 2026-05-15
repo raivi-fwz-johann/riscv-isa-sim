@@ -25,9 +25,7 @@ struct spike_observed_insn_t {
 };
 
 struct spike_state_snapshot_t {
-  spike_observed_insn_t fetch;     // written by observe_fetch only
-  spike_observed_insn_t exec;      // written by observe_exec only
-  spike_observed_insn_t pre_exec;  // written by observe_pre_exec only (before fetch.func)
+  spike_observed_insn_t observed;  // written by all observe hooks, last writer wins
   bool in_trap{false};             // written by observe_trap
   bool has_tval2{false};
   uint64_t epc{ERROR_PC_ADDR};     // trap pc, written by observe_trap

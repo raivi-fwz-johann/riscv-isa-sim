@@ -211,7 +211,7 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
   if (!snapshot) {
     return -1;
   }
-  if (!snapshot->in_trap && !snapshot->exec.valid) {
+  if (!snapshot->in_trap && !snapshot->observed.valid) {
     return -1;
   }
 
@@ -227,39 +227,25 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
     data.m_Pc = snapshot->epc;
     data.m_NPc = snapshot->trap_npc;
   } else {
-    data.m_Pc = snapshot->exec.pc;
-    data.m_NPc = snapshot->exec.npc;
+    data.m_Pc = snapshot->observed.pc;
+    data.m_NPc = snapshot->observed.npc;
   }
   if (data.m_NPc == ERROR_PC_ADDR) {
     data.m_NPc = p->get_state()->pc;
   }
 
-  /* paddr: fetch (from last refill_icache, matches OLD curr_info) > exec. */
-  if (snapshot->fetch.valid) {
-    data.m_PPN = snapshot->fetch.paddr;
-    data.m_PPN2 = snapshot->fetch.paddr2;
-  } else {
-    data.m_PPN = snapshot->exec.paddr;
-    data.m_PPN2 = snapshot->exec.paddr2;
-  }
+  data.m_PPN = snapshot->observed.paddr;
+  data.m_PPN2 = snapshot->observed.paddr2;
   if (data.m_PPN2 == ERROR_PC_ADDR || data.m_PPN2 == 0) {
     data.m_PPN2 = data.m_PPN;
   }
 
-  /* bits: pre_exec (pc match, survives traps) > fetch (same as OLD curr_info) > exec. */
-  if (in_trap && snapshot->pre_exec.valid &&
-      snapshot->pre_exec.pc == snapshot->epc) {
-    data.m_Bits = snapshot->pre_exec.bits;
-  } else if (snapshot->fetch.valid) {
-    data.m_Bits = snapshot->fetch.bits;
-  } else if (snapshot->exec.valid) {
-    data.m_Bits = snapshot->exec.bits;
-  }
+  data.m_Bits = snapshot->observed.bits;
   if (in_trap && data.m_Bits == 0) {
     data.m_Bits = (data.m_NPc - data.m_Pc == 4) ? 0x13 : 0x1;
   }
 
-  if (!in_trap && data.m_Bits != 0) {
+if (!in_trap && data.m_Bits != 0) {
     const auto inst_len = static_cast<uint64_t>(insn_t(data.m_Bits).length());
     const auto page0 = std::min<uint64_t>(inst_len, PGSIZE - (data.m_Pc % PGSIZE));
     if (page0 != inst_len) {
@@ -277,8 +263,8 @@ int RawSpike::record(InstTrace &data, uint32_t CId) {
     data.tval2_ = snapshot->tval2;
   }
   data.m_mmuTrace = m_StateExporter->get_mmu_trace(CId);
-  if (data.m_mmuTrace.paddr == 0 && snapshot->fetch.paddr != ERROR_PC_ADDR) {
-    data.m_mmuTrace.paddr = snapshot->fetch.paddr;
+  if (data.m_mmuTrace.paddr == 0 && snapshot->observed.paddr != ERROR_PC_ADDR) {
+    data.m_mmuTrace.paddr = snapshot->observed.paddr;
   }
   if (in_trap && data.m_mmuTrace.excp_cause == 0) {
     data.m_mmuTrace.excp_cause = snapshot->cause;

@@ -33,12 +33,11 @@ void spike_state_exporter_t::observe_pre_exec(
   if (!core) {
     return;
   }
-  auto& pe = core->snapshot.pre_exec;
-  pe.valid = true;
-  pe.pc = pc;
-  pe.bits = in ? in->insn.bits() : 0;
-  pe.paddr = core->snapshot.fetch.paddr;
-  pe.paddr2 = core->snapshot.fetch.paddr2;
+  auto& obs = core->snapshot.observed;
+  obs.valid = true;
+  obs.pc = pc;
+  obs.bits = in ? in->insn.bits() : 0;
+  obs.npc = ERROR_PC_ADDR;
 }
 
 void spike_state_exporter_t::observe_exec(
@@ -53,15 +52,13 @@ void spike_state_exporter_t::observe_exec(
   }
 
   core->snapshot.in_trap = false;
-  auto& exec = core->snapshot.exec;
-  exec.valid = true;
-  exec.pc = pc;
-  exec.bits = in ? in->insn.bits() : 0;
-  exec.paddr = core->snapshot.fetch.paddr;
-  exec.paddr2 = core->snapshot.fetch.paddr2;
-  exec.npc = ERROR_PC_ADDR;
+  auto& obs = core->snapshot.observed;
+  obs.valid = true;
+  obs.pc = pc;
+  obs.bits = in ? in->insn.bits() : 0;
+  obs.npc = ERROR_PC_ADDR;
   if (npc != 0 && !invalid_pc(npc)) {
-    exec.npc = npc;
+    obs.npc = npc;
   }
 
   if (core->has_pending_mmu_trace) {
@@ -69,7 +66,7 @@ void spike_state_exporter_t::observe_exec(
     core->has_pending_mmu_trace = false;
   } else {
     core->snapshot.mmu_trace = {};
-    core->snapshot.mmu_trace.paddr = exec.paddr;
+    core->snapshot.mmu_trace.paddr = 0;
   }
 }
 
@@ -98,7 +95,7 @@ reg_t spike_state_exporter_t::observe_trap(
     core->has_pending_mmu_trace = false;
   } else {
     snap.mmu_trace = {};
-    snap.mmu_trace.paddr = snap.fetch.paddr;
+    snap.mmu_trace.paddr = snap.observed.paddr;
   }
   snap.mmu_trace.excp_cause = snap.cause;
 
@@ -146,13 +143,13 @@ void spike_state_exporter_t::observe_fetch(
   if (!core) {
     return;
   }
-  auto& fetch = core->snapshot.fetch;
-  fetch.valid = true;
-  fetch.pc = vaddr;
-  fetch.paddr = paddr;
-  fetch.paddr2 = paddr2;
+  auto& obs = core->snapshot.observed;
+  obs.valid = true;
+  obs.pc = vaddr;
+  obs.paddr = paddr;
+  obs.paddr2 = paddr2;
   if (bits != 0) {
-    fetch.bits = bits;
+    obs.bits = bits;
   }
   (void)length;
 }
@@ -195,9 +192,7 @@ void spike_state_exporter_t::reset_observed(size_t hart_id)
     return;
   }
 
-  core->snapshot.fetch.reset();
-  core->snapshot.exec.reset();
-  core->snapshot.pre_exec.reset();
+  core->snapshot.observed.reset();
   core->snapshot.in_trap = false;
   core->mem_loads.clear();
   core->mem_stores.clear();
