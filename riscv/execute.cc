@@ -490,6 +490,7 @@ void processor_t::step(size_t n)
     }
     catch (triggers::matched_t& t)
     {
+      n = instret;
       take_trigger_action(t.action, t.address, pc, t.gva);
     }
     catch(trap_debug_mode&)
