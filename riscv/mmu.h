@@ -127,7 +127,11 @@ public:
         auto access_info = generate_access_info(addr, LOAD, {});
         access_info.readonly = true;
         ldpaddr = translate(access_info, sizeof(T));
-      } catch (...) {}
+      } catch (...) {
+        if (auto* h = hook_dispatcher())
+          h->on_mem_log(proc->get_id(), addr, 0, uint8_t(sizeof(T)), ldpaddr, false);
+        throw;
+      }
       if (auto* h = hook_dispatcher())
         h->on_mem_log(proc->get_id(), addr, 0, uint8_t(sizeof(T)), ldpaddr, false);
     }
