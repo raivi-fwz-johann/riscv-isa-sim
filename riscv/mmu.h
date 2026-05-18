@@ -373,6 +373,7 @@ public:
   inline icache_entry_t* refill_icache(reg_t addr, icache_entry_t* entry)
   {
     insn_bits_t insn = fetch_insn_parcel(addr);
+    insn_bits_t first_parcel = insn;
     // rivai beg: first parcel paddr, set by fetch_insn_parcel → access_tlb/perform_intrapage_fetch
     auto fetch_paddr = curr_fetch_paddr;
     // rivai end
@@ -398,7 +399,7 @@ public:
     MMU_OBSERVE_FETCH(addr, insn, length);
     // rivai beg: notify model of instruction fetch with physical addresses
     if (auto* hook = hook_dispatcher())
-      hook->on_fetch_observe(proc->get_id(), addr, fetch_paddr, curr_fetch_paddr, insn, length);
+      hook->on_fetch_observe(proc->get_id(), addr, fetch_paddr, curr_fetch_paddr, first_parcel, length);
     // rivai end
     return entry;
   }
