@@ -28,7 +28,9 @@ bool SpikeSimObjHooker::on_exit(int code) {
   m_StopFn();
   return false;
 }
-
+bool SpikeSimObjHooker::on_commit() {
+  return true;
+}
 void SpikeSimObjHooker::on_pre_exec(uint32_t hart_id, insn_fetch_t* in, reg_t pc) {
   if (m_StateExporter) {
     m_StateExporter->observe_pre_exec(hart_id, in, pc);

@@ -25,6 +25,7 @@ public:
                     std::function<void()> stop_fn);
 
   bool on_exit(int code) override;
+  bool on_commit() override;
   void on_exec_observe(uint32_t hart_id, insn_fetch_t* in, reg_t pc, reg_t npc) override;
   void on_pre_exec(uint32_t hart_id, insn_fetch_t* in, reg_t pc) override;
   reg_t on_trap(uint32_t hart_id, void *in, reg_t pc, trap_t &t) override;
