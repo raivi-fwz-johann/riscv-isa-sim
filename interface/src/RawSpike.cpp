@@ -189,6 +189,9 @@ void RawSpike::start() {
 }
 
 void RawSpike::stop() {
+  if (!m_Simulator) {
+    return;
+  }
   m_RunHelper.stop(m_Simulator.get());
 }
 

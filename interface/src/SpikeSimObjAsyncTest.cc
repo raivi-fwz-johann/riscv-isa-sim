@@ -37,6 +37,11 @@ public:
 };
 
 int main(int argc, char **argv) {
+  if (argc == 1) {
+    SpikeSimObjSync sim;
+    sim.stop();
+    return 0;
+  }
   if (argc != 4) {
     exit(-1);
   }
