@@ -124,7 +124,7 @@ public:
     if (proc && unlikely(mem_log_active())) {
       reg_t ldpaddr = addr;
       try {
-        auto access_info = generate_access_info(addr, LOAD, {});
+        auto access_info = generate_access_info(addr, LOAD, xlate_flags);
         access_info.readonly = true;
         ldpaddr = translate(access_info, sizeof(T));
       } catch (...) {
@@ -181,7 +181,7 @@ public:
     if (proc && unlikely(mem_log_active())) {
       reg_t paddr = addr;
       try {
-        auto access_info = generate_access_info(addr, STORE, {});
+        auto access_info = generate_access_info(addr, STORE, xlate_flags);
         access_info.readonly = true;
         paddr = translate(access_info, sizeof(T));
       } catch (...) {}
