@@ -320,12 +320,35 @@ int sim_t::run()
 
 void sim_t::step(size_t n)
 {
-  for (size_t i = 0, steps = 0; i < n; i += steps)
-  {
-    steps = std::min(n - i, INTERLEAVE - current_step);
-    procs[current_proc]->step(steps);
+  // rivai beg: handle --instructions in sim_t::step(), not idle().
+  auto exit_if_instruction_limit_reached = [&]() {
+    if (!instruction_limit.has_value() || *instruction_limit != 0) {
+      return false;
+    }
 
-    current_step += steps;
+    auto* hook = runtime_context() ? runtime_context()->hook_dispatcher() : nullptr;
+    if (!hook || hook->on_exit(0)) {
+      htif_exit(0);
+    }
+    return true;
+  };
+  // rivai end
+
+  for (size_t i = 0; i < n; i++)
+  {
+    if (exit_if_instruction_limit_reached()) {
+      return;
+    }
+
+    // rivai beg: check instruction_limit once per executed processor step.
+    procs[current_proc]->step(1);
+
+    if (instruction_limit.has_value()) {
+      (*instruction_limit)--;
+    }
+    // rivai end
+
+    current_step++;
     if (current_step == INTERLEAVE)
     {
       current_step = 0;
@@ -345,8 +368,10 @@ void sim_t::step(size_t n)
         }
       }
     }
+
   }
 }
+
 const char* sim_t::get_dts() {
   dts = dtb_to_dts(dtb);
   return dts.c_str(); 
@@ -565,16 +590,7 @@ void sim_t::idle()
   if (debug || ctrlc_pressed)
     interactive();
   else {
-    if (instruction_limit.has_value()) {
-      if (*instruction_limit < INTERLEAVE) {
-        // Final step.
-        step(*instruction_limit);
-        htif_exit(0);
-        *instruction_limit = 0;
-        return;
-      }
-      *instruction_limit -= INTERLEAVE;
-    }
+    // rivai: instruction_limit is checked in sim_t::step().
     step(1);
   }
 
