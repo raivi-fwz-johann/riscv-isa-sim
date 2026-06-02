@@ -73,25 +73,34 @@ std::pair<reg_t, abstract_device_t*> bus_t::find_device(reg_t addr, size_t len)
   if (unlikely(!len || addr + len - 1 < addr))
     return std::make_pair(0, nullptr);
 
-  // Obtain iterator to device immediately after the one that might match
+  /* rivai beg: support nested MMIO devices inside a larger memory region. */
+  const reg_t end = addr + len - 1;
+
+  // Obtain iterator to device immediately after the queried address.
   auto it_after = devices.upper_bound(addr);
-  reg_t base, size;
-  if (likely(it_after != devices.begin())) {
-    // Obtain iterator to device that might match
-    auto it = std::prev(it_after);
-    base = it->first;
-    size = it->second->size();
-    if (likely(addr - base + len - 1 < size)) {
-      // it fully contains [addr, addr + len)
-      return std::make_pair(it->first, it->second);
+
+  for (auto it = it_after; it != devices.begin();) {
+    --it;
+
+    const reg_t base = it->first;
+    const reg_t size = it->second->size();
+    if (unlikely(size == 0))
+      continue;
+
+    const reg_t dev_end = base + size - 1;
+    if (unlikely(dev_end < base))
+      continue;
+
+    if (likely(addr >= base && end <= dev_end)) {
+      return std::make_pair(base, it->second);
+    }
+
+    if (unlikely(addr >= base && addr <= dev_end)) {
+      // The request starts in this device but extends beyond it.
+      return std::make_pair(0, nullptr);
     }
   }
-
-  if (unlikely((it_after != devices.end() && addr + len - 1 >= it_after->first)
-      || (it_after != devices.begin() && addr - base < size))) {
-    // it_after or it contains part of, but not all of, [addr, add + len)
-    return std::make_pair(0, nullptr);
-  }
+  /* rivai end */
 
   // No matching device
   return std::make_pair(0, fallback);
