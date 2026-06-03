@@ -66,7 +66,7 @@ protected:
 
     size_t m_stepToIgnore{0};
     uint64_t m_MissIdToAlloc{MISS_ID_FLAG};
-    InstInfoHolder m_MissIHolder;
+    InstInfoHolder m_MissIHolder{false};
 
     uint64_t prev_rollback_id{0};
   };
