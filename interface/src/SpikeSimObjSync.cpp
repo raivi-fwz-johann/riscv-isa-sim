@@ -336,3 +336,7 @@ uint64_t SpikeSimObjSync::backendCurrPc(uint32_t CId) const {
   return m_SimImpl->getCurrPc(CId);
 }
 
+void SpikeSimObjSync::setPredictionMiss(bool is_prediction_miss, uint32_t CId) {
+  m_CoreInfos[CId].m_PathHandler.setMissPredict(is_prediction_miss);
+}
+

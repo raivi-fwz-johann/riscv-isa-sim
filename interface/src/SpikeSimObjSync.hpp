@@ -47,6 +47,7 @@ public:
   void setInterleave(size_t val) override;
   void setLogMem(bool val) override;
   void setLogCommits(bool log_commits, bool is_fast, uint32_t cid = 0) override;
+  void setPredictionMiss(bool is_prediction_miss, uint32_t CId = 0) override;
 
   InstInfoHolder &correctHolder(uint32_t CId) override;
   const InstInfoHolder &correctHolder(uint32_t CId) const override;
